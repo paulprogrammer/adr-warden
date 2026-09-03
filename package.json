@@ -1,11 +1,12 @@
 {
-  "name": "adr-search-and-lifecycle",
+  "name": "adr-warden",
   "version": "1.0.0",
-  "description": "",
+  "description": "Deterministic vector overlap guard and RFC knowledge graph engine for Architecture Decision Records",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "adr-vector": "./dist/cli.js"
+    "warden": "./dist/cli.js",
+    "adr-warden": "./dist/cli.js"
   },
   "files": [
     "dist",

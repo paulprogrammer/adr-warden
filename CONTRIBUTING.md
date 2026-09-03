@@ -1,4 +1,4 @@
-# Contributing to ADR Search and Lifecycle Engine
+# Contributing to ADR Warden
 
 ## Overview
 
@@ -22,7 +22,7 @@ We welcome contributions to improve the vector search engine, knowledge graph tr
    Clone your fork locally and create a dedicated feature branch from `main`:
    ```bash
    git clone <your-fork-url>
-   cd adr-search-and-lifecycle
+   cd adr-warden
    git checkout -b feat/my-improvement
    ```
 

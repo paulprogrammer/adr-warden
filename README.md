@@ -1,6 +1,6 @@
-# ADR Search and Lifecycle Vector Engine
+# ADR Warden
 
-A lightweight, fully local vector embedding engine and Model Context Protocol (MCP) server for Architecture Decision Records (ADRs). Designed to prevent duplicate architectural decisions, detect conflicting directions, and identify extension or obsolescence targets across multi-catalog repositories.
+A lightweight, fully local vector embedding engine, RFC knowledge graph, and Model Context Protocol (MCP) server for Architecture Decision Records (ADRs). Designed to prevent duplicate architectural decisions, detect conflicting directions, and validate relational dependencies across architecture repositories.
 
 ## Problem Statement
 
@@ -97,7 +97,7 @@ To wire this server into an agent workspace (such as `.mcp.json` or `.agents/mcp
 ```json
 {
   "mcpServers": {
-    "adr-search": {
+    "adr-warden": {
       "command": "node",
       "args": [
         "/home/paul/PROJ/adr-search-and-lifecycle/dist/cli.js",
@@ -114,38 +114,38 @@ To wire this server into an agent workspace (such as `.mcp.json` or `.agents/mcp
 
 ## CLI Usage
 
-The package provides a direct CLI binary for developer and CI automation:
+The package provides direct CLI binaries (`warden` and `adr-warden`) for developer and CI automation:
 
 ```bash
 # Index active ADR catalog
-pnpm exec adr-vector index ./docs/adr
+pnpm exec warden index ./docs/adr
 
 # Search semantically
-pnpm exec adr-vector search "how do we handle secrets and runtime variables"
+pnpm exec warden search "how do we handle secrets and runtime variables"
 
 # Check draft overlap before writing
-pnpm exec adr-vector check \
+pnpm exec warden check \
   --title "Runtime Configuration Architecture" \
   --context "Configuration is scattered across pipelines causing divergence." \
   --decision "Use an abstracted parameter store with Git overlays."
 
 # Validate knowledge graph integrity (cycles, broken references, status contradictions)
-pnpm exec adr-vector graph validate
+pnpm exec warden graph validate
 
 # Trace RFC-style obsoletion lineage to find current active standard
-pnpm exec adr-vector graph lineage 0001
+pnpm exec warden graph lineage 0001
 
 # Calculate downstream blast radius and dependents
-pnpm exec adr-vector graph impact 0001
+pnpm exec warden graph impact 0001
 
 # Inspect upstream dependencies in topological order
-pnpm exec adr-vector graph deps 0007
+pnpm exec warden graph deps 0007
 
 # Export Mermaid relationship diagram
-pnpm exec adr-vector graph mermaid 0001
+pnpm exec warden graph mermaid 0001
 
 # List all catalog entries
-pnpm exec adr-vector list
+pnpm exec warden list
 ```
 
 ## Verification & Test Suite

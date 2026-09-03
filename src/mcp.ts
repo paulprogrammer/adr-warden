@@ -55,7 +55,7 @@ export function createMcpServer(config: McpServerConfig = {}): {
   });
 
   const server = new McpServer({
-    name: 'adr-search-engine',
+    name: 'adr-warden',
     version: '1.0.0',
   });
 

@@ -26,7 +26,7 @@ async function main() {
 
       if (targetDirs.length === 0) {
         process.stderr.write(
-          'Error: No ADR directories specified or discovered. Specify directories: adr-vector index <dir1> <dir2>\n'
+          'Error: No ADR directories specified or discovered. Specify directories: warden index <dir1> <dir2>\n'
         );
         process.exit(1);
       }
@@ -42,7 +42,7 @@ async function main() {
     case 'search': {
       const query = args.slice(1).join(' ').trim();
       if (!query) {
-        process.stderr.write('Error: Search query required: adr-vector search "query"\n');
+        process.stderr.write('Error: Search query required: warden search "query"\n');
         process.exit(1);
       }
 
@@ -167,7 +167,7 @@ async function main() {
     case 'get': {
       const id = args[1];
       if (!id) {
-        process.stderr.write('Error: ADR ID required: adr-vector get <id>\n');
+        process.stderr.write('Error: ADR ID required: warden get <id>\n');
         process.exit(1);
       }
       const doc = engine.getAdr(id);
@@ -197,7 +197,7 @@ async function main() {
 
       if (sub === 'lineage') {
         if (!targetId) {
-          process.stderr.write('Error: ADR ID required: adr-vector graph lineage <id>\n');
+          process.stderr.write('Error: ADR ID required: warden graph lineage <id>\n');
           process.exit(1);
         }
         const report = engine.getLineage(targetId);
@@ -212,7 +212,7 @@ async function main() {
         }
       } else if (sub === 'impact') {
         if (!targetId) {
-          process.stderr.write('Error: ADR ID required: adr-vector graph impact <id>\n');
+          process.stderr.write('Error: ADR ID required: warden graph impact <id>\n');
           process.exit(1);
         }
         const impact = engine.getImpact(targetId);
@@ -248,7 +248,7 @@ async function main() {
         }
       } else if (sub === 'deps') {
         if (!targetId) {
-          process.stderr.write('Error: ADR ID required: adr-vector graph deps <id>\n');
+          process.stderr.write('Error: ADR ID required: warden graph deps <id>\n');
           process.exit(1);
         }
         const deps = engine.getDependencies(targetId);
@@ -283,7 +283,7 @@ async function main() {
         const mermaid = engine.getGraphMermaid({ focusId: targetId });
         process.stdout.write(`\n\`\`\`mermaid\n${mermaid}\n\`\`\`\n`);
       } else {
-        process.stderr.write('Usage: adr-vector graph <validate|lineage|impact|deps|mermaid> [id]\n');
+        process.stderr.write('Usage: warden graph <validate|lineage|impact|deps|mermaid> [id]\n');
         process.exit(1);
       }
       break;
@@ -292,22 +292,23 @@ async function main() {
     case 'help':
     default: {
       process.stdout.write(`
-ADR Search & Vector Lifecycle Engine
+ADR Warden (warden / adr-warden)
+Deterministic vector overlap guard and RFC knowledge graph for ADRs
 
 Usage:
-  adr-vector mcp                        Start Model Context Protocol (MCP) server on stdio
-  adr-vector index [dir...]             Index ADR directories with incremental embedding cache
-  adr-vector search <query>             Semantic vector search across indexed ADRs
-  adr-vector check --file <path>        Check a draft ADR file for overlap and duplicate risk
-  adr-vector check -t <title> -c <ctx>  Check draft components for overlap
-  adr-vector graph validate             Validate knowledge graph (cycles, dangling links, split-brain)
-  adr-vector graph lineage <id>         Trace RFC-style obsoletion and active replacement chain
-  adr-vector graph impact <id>          Evaluate downstream blast radius and dependents
-  adr-vector graph deps <id>            Inspect upstream dependencies and prerequisites
-  adr-vector graph mermaid [id]         Export Mermaid architecture topology diagram
-  adr-vector list                       List all indexed ADRs
-  adr-vector get <id>                   View details of an indexed ADR
-  adr-vector help                       Show this help message
+  warden mcp                        Start Model Context Protocol (MCP) server on stdio
+  warden index [dir...]             Index ADR directories with incremental embedding cache
+  warden search <query>             Semantic vector search across indexed ADRs
+  warden check --file <path>        Check a draft ADR file for overlap and duplicate risk
+  warden check -t <title> -c <ctx>  Check draft components for overlap
+  warden graph validate             Validate knowledge graph (cycles, dangling links, split-brain)
+  warden graph lineage <id>         Trace RFC-style obsoletion and active replacement chain
+  warden graph impact <id>          Evaluate downstream blast radius and dependents
+  warden graph deps <id>            Inspect upstream dependencies and prerequisites
+  warden graph mermaid [id]         Export Mermaid architecture topology diagram
+  warden list                       List all indexed ADRs
+  warden get <id>                   View details of an indexed ADR
+  warden help                       Show this help message
 `);
       break;
     }

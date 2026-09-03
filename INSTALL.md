@@ -1,4 +1,4 @@
-# Harness Integration and Installation Guide
+# ADR Warden: Harness Integration and Installation Guide
 
 ## Problem Statement
 
@@ -6,7 +6,7 @@ Autonomous agents operating inside architecture repositories require two synchro
 1. A runtime protocol transport (MCP) providing deterministic semantic search, overlap scoring, and graph traversal tools.
 2. Behavioral instruction runbooks (Skills) that force the agent harness to invoke pre-flight checks before modifying files and to validate graph topologies before submitting changes.
 
-This guide provides concrete configurations to wire the ADR Vector and Knowledge Graph server and its deliverable skills into common agent harness clients.
+This guide provides concrete configurations to wire ADR Warden (`adr-warden`) and its deliverable skills into common agent harness clients.
 
 ---
 
@@ -16,7 +16,7 @@ The engine requires Node.js (version 20 or higher) and `pnpm`.
 
 ```bash
 # Clone and navigate to the engine directory
-cd /path/to/adr-search-and-lifecycle
+cd /path/to/adr-warden
 
 # Install dependencies and compile TypeScript to dist/
 pnpm install
@@ -52,15 +52,15 @@ Variable | Default | Description
 Antigravity automatically discovers MCP servers and project skills defined in your workspace root.
 
 #### MCP Server Registration: `.agents/mcp_config.json`
-Add the `adr-search` server configuration:
+Add the `adr-warden` server configuration:
 
 ```json
 {
   "mcpServers": {
-    "adr-search": {
+    "adr-warden": {
       "command": "node",
       "args": [
-        "/path/to/adr-search-and-lifecycle/dist/cli.js",
+        "/path/to/adr-warden/dist/cli.js",
         "mcp"
       ],
       "env": {
@@ -79,8 +79,8 @@ Copy the deliverable skills from this repository into the target workspace `.age
 # From the target architecture repository root:
 mkdir -p .agents/skills
 
-cp -r /path/to/adr-search-and-lifecycle/skills/adr-authoring-guard .agents/skills/
-cp -r /path/to/adr-search-and-lifecycle/skills/adr-graph-lifecycle .agents/skills/
+cp -r /path/to/adr-warden/skills/adr-authoring-guard .agents/skills/
+cp -r /path/to/adr-warden/skills/adr-graph-lifecycle .agents/skills/
 ```
 
 Once placed in `.agents/skills/`, the harness progressively discloses these workflows whenever the agent is tasked with authoring an ADR or evaluating dependencies.
@@ -99,10 +99,10 @@ Claude Desktop configures MCP servers globally via its primary configuration fil
 ```json
 {
   "mcpServers": {
-    "adr-search": {
+    "adr-warden": {
       "command": "node",
       "args": [
-        "/path/to/adr-search-and-lifecycle/dist/cli.js",
+        "/path/to/adr-warden/dist/cli.js",
         "mcp"
       ],
       "env": {
@@ -128,10 +128,10 @@ Run from the root of your target architecture repository:
 
 ```bash
 # Register at project scope (.mcp.json)
-claude mcp add -s project adr-search \
+claude mcp add -s project adr-warden \
   -e ADR_DIRS="./docs/adr" \
   -e ADR_CACHE_DIR="./.adr-cache" \
-  -- node /path/to/adr-search-and-lifecycle/dist/cli.js mcp
+  -- node /path/to/adr-warden/dist/cli.js mcp
 ```
 
 #### Option B: Declarative Configuration via `.mcp.json`
@@ -140,10 +140,10 @@ Create or update `.mcp.json` in the root of the target architecture repository:
 ```json
 {
   "mcpServers": {
-    "adr-search": {
+    "adr-warden": {
       "command": "node",
       "args": [
-        "/path/to/adr-search-and-lifecycle/dist/cli.js",
+        "/path/to/adr-warden/dist/cli.js",
         "mcp"
       ],
       "env": {
@@ -181,10 +181,10 @@ Cursor supports MCP servers configured at the workspace level or user settings l
 ```json
 {
   "mcpServers": {
-    "adr-search": {
+    "adr-warden": {
       "command": "node",
       "args": [
-        "/path/to/adr-search-and-lifecycle/dist/cli.js",
+        "/path/to/adr-warden/dist/cli.js",
         "mcp"
       ],
       "env": {
@@ -220,10 +220,10 @@ For VS Code extensions implementing the Model Context Protocol (such as Cline or
 ```json
 {
   "mcpServers": {
-    "adr-search": {
+    "adr-warden": {
       "command": "node",
       "args": [
-        "/path/to/adr-search-and-lifecycle/dist/cli.js",
+        "/path/to/adr-warden/dist/cli.js",
         "mcp"
       ],
       "env": {
@@ -258,10 +258,10 @@ Windsurf supports MCP servers via its central configuration file (`~/.codeium/wi
 ```json
 {
   "mcpServers": {
-    "adr-search": {
+    "adr-warden": {
       "command": "node",
       "args": [
-        "/path/to/adr-search-and-lifecycle/dist/cli.js",
+        "/path/to/adr-warden/dist/cli.js",
         "mcp"
       ],
       "env": {
@@ -284,10 +284,10 @@ Run the binary directly against the target ADR catalog:
 
 ```bash
 # Verify directory scan and embedding cache generation
-node /path/to/adr-search-and-lifecycle/dist/cli.js index /path/to/target-architecture-repo/docs/adr
+node /path/to/adr-warden/dist/cli.js index /path/to/target-architecture-repo/docs/adr
 
 # Verify graph structural validation
-node /path/to/adr-search-and-lifecycle/dist/cli.js graph validate
+node /path/to/adr-warden/dist/cli.js graph validate
 ```
 
 Confirm that the validation report outputs:
@@ -297,7 +297,7 @@ Confirm that the validation report outputs:
 Use the official MCP inspector to verify protocol handshake and tool registration over stdio:
 
 ```bash
-npx @modelcontextprotocol/inspector node /path/to/adr-search-and-lifecycle/dist/cli.js mcp
+npx @modelcontextprotocol/inspector node /path/to/adr-warden/dist/cli.js mcp
 ```
 
 Confirm that all 10 tools are enumerated:
