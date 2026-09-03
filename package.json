@@ -7,6 +7,10 @@
   "bin": {
     "adr-vector": "./dist/cli.js"
   },
+  "files": [
+    "dist",
+    "skills"
+  ],
   "scripts": {
     "build": "tsc && chmod +x dist/cli.js",
     "test": "vitest run",
