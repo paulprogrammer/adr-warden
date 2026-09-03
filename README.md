@@ -1,6 +1,6 @@
 # ADR Warden
 
-A lightweight, fully local vector embedding engine, RFC knowledge graph, and Model Context Protocol (MCP) server for Architecture Decision Records (ADRs). Designed to prevent duplicate architectural decisions, detect conflicting directions, and validate relational dependencies across architecture repositories.
+A lightweight, fully local vector embedding engine, decision lineage knowledge graph, and Model Context Protocol (MCP) server for Architecture Decision Records (ADRs). Designed to prevent duplicate architectural decisions, detect conflicting directions, and validate relational dependencies across architecture repositories.
 
 ## Problem Statement
 
@@ -63,7 +63,7 @@ Scans and synchronizes target directories with the embedding cache.
   - `force` (boolean, optional): Recompute embeddings ignoring cache
 
 ### 6. `adr_graph_lineage`
-Traverses RFC-style obsoletion and replacement lineage for an ADR. Resolves active replacement standard, obsolete predecessors, and chronological supersession timeline.
+Traverses decision supersession and replacement lineage for an ADR. Resolves active replacement standard, obsolete predecessors, and chronological timeline.
 
 - **Parameters**:
   - `id` (string): ADR identifier to trace lineage for
@@ -132,7 +132,7 @@ pnpm exec warden check \
 # Validate knowledge graph integrity (cycles, broken references, status contradictions)
 pnpm exec warden graph validate
 
-# Trace RFC-style obsoletion lineage to find current active standard
+# Trace supersession lineage to find current active standard
 pnpm exec warden graph lineage 0001
 
 # Calculate downstream blast radius and dependents

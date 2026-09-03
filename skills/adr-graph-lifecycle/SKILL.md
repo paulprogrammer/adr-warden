@@ -2,7 +2,7 @@
 name: adr-graph-lifecycle
 description: >-
   Navigates, traverses, and validates the Architecture Decision Knowledge Graph.
-  Activate this skill when evaluating dependencies between ADRs, tracing RFC-style obsoletion lineage,
+  Activate this skill when evaluating dependencies between ADRs, tracing decision supersession lineage,
   calculating downstream blast radius or impact before modifying an architectural standard,
   rendering Mermaid topology diagrams, or validating graph integrity prior to git commit or PR submission.
 ---
@@ -94,7 +94,7 @@ To generate relationship diagrams for documentation or architectural reviews:
 
 Tool | Purpose | Arguments
 :--- | :--- | :---
-`adr_graph_lineage` | Traces RFC-style obsoletion and active replacement chain | `id`
+`adr_graph_lineage` | Traces supersession and active replacement chain | `id`
 `adr_graph_impact` | Evaluates downstream blast radius, dependents, and citations | `id`
 `adr_graph_dependencies` | Inspects upstream prerequisites in topological order | `id`
 `adr_graph_validate` | Verifies integrity (cycles, broken links, status contradictions) | none

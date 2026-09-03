@@ -36,7 +36,7 @@ When autonomous agents or engineers author architectural records in isolation, t
        ▼                                    ▼
   HALT File Creation                  Proceed to Draft
   - If DUPLICATE: Enrich existing     - If EXTENSION: Add extends: [ID]
-  - If CONFLICT: Require RFC amend    - If NOVEL: Follow standard MADR template
+  - If CONFLICT: Require amendment    - If NOVEL: Follow standard MADR template
 ```
 
 ---
@@ -78,7 +78,7 @@ Act strictly based on the diagnostic `verdict`:
   1. HALT net-new ADR authoring.
   2. Call `get_adr` with the conflicting record ID.
   3. Detail the exact contradiction to the user.
-  4. If the conflict is intentional, formulate an RFC supersession proposal (`OBSOLETES`) or an amendment (`AMENDS`). Do not create an unharmonized conflicting record.
+  4. If the conflict is intentional, formulate a formal supersession proposal (`OBSOLETES`) or an amendment (`AMENDS`). Do not create an unharmonized conflicting record.
 
 - **`EXTENSION_CANDIDATE`**:
   1. Proceed with drafting the decision document.

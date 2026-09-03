@@ -348,7 +348,7 @@ export function createMcpServer(config: McpServerConfig = {}): {
   // Tool 6: adr_graph_lineage
   server.tool(
     'adr_graph_lineage',
-    'Traverses RFC-style obsoletion and replacement lineage for an ADR. Resolves active successor standard, obsolete predecessors, and chronological supersession timeline.',
+    'Traverses decision supersession and replacement lineage for an ADR. Resolves active successor standard, obsolete predecessors, and chronological timeline.',
     {
       id: z.string().describe('ADR identifier to trace lineage for (e.g. "0001", "ADR-001")'),
     },

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { AdrKnowledgeGraph } from '../src/graph.js';
 import type { AdrNode } from '../src/types.js';
 
-describe('AdrKnowledgeGraph Core and RFC-style Traversals', () => {
+describe('AdrKnowledgeGraph Core and Decision Lineage Traversals', () => {
   let graph: AdrKnowledgeGraph;
 
   beforeEach(() => {
@@ -43,7 +43,7 @@ describe('AdrKnowledgeGraph Core and RFC-style Traversals', () => {
     expect(inA[0].type).toBe('EXTENDED_BY');
   });
 
-  it('traces RFC-style multi-step obsoletion lineage to active replacement', () => {
+  it('traces multi-step obsoletion lineage to active replacement', () => {
     // ADR-0001 -> ADR-0002 -> ADR-0003
     graph.addNode({
       id: '0001',

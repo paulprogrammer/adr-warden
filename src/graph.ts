@@ -204,7 +204,7 @@ export class AdrKnowledgeGraph {
     }
   }
 
-  // RFC-style Lineage Traversal
+  // Decision Lineage Traversal (Obsoletion & Supersession Chains)
   public getLineage(id: string): LineageReport {
     const canonicalId = this.resolveId(id);
     if (!canonicalId || !this.nodes.has(canonicalId)) {

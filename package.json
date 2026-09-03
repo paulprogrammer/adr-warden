@@ -1,7 +1,7 @@
 {
   "name": "adr-warden",
   "version": "1.0.0",
-  "description": "Deterministic vector overlap guard and RFC knowledge graph engine for Architecture Decision Records",
+  "description": "Deterministic vector overlap guard and decision lineage knowledge graph for Architecture Decision Records",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {

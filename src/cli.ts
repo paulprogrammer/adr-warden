@@ -293,7 +293,7 @@ async function main() {
     default: {
       process.stdout.write(`
 ADR Warden (warden / adr-warden)
-Deterministic vector overlap guard and RFC knowledge graph for ADRs
+Deterministic vector overlap guard and decision lineage graph for ADRs
 
 Usage:
   warden mcp                        Start Model Context Protocol (MCP) server on stdio
@@ -302,7 +302,7 @@ Usage:
   warden check --file <path>        Check a draft ADR file for overlap and duplicate risk
   warden check -t <title> -c <ctx>  Check draft components for overlap
   warden graph validate             Validate knowledge graph (cycles, dangling links, split-brain)
-  warden graph lineage <id>         Trace RFC-style obsoletion and active replacement chain
+  warden graph lineage <id>         Trace supersession lineage and active replacement chain
   warden graph impact <id>          Evaluate downstream blast radius and dependents
   warden graph deps <id>            Inspect upstream dependencies and prerequisites
   warden graph mermaid [id]         Export Mermaid architecture topology diagram
