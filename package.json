@@ -18,7 +18,22 @@
     "start": "node dist/cli.js",
     "mcp": "node dist/cli.js mcp"
   },
-  "keywords": [],
+  "keywords": [
+    "adr",
+    "architecture-decision-records",
+    "mcp",
+    "model-context-protocol",
+    "vector-search",
+    "knowledge-graph"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/paulprogrammer/adr-warden.git"
+  },
+  "homepage": "https://github.com/paulprogrammer/adr-warden#readme",
+  "bugs": {
+    "url": "https://github.com/paulprogrammer/adr-warden/issues"
+  },
   "author": "Paul Williams <paulprogrammer@gmail.com>",
   "license": "MIT",
   "devEngines": {

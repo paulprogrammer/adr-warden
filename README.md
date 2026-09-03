@@ -98,11 +98,8 @@ To wire this server into an agent workspace (such as `.mcp.json` or `.agents/mcp
 {
   "mcpServers": {
     "adr-warden": {
-      "command": "node",
-      "args": [
-        "/home/paul/PROJ/adr-search-and-lifecycle/dist/cli.js",
-        "mcp"
-      ],
+      "command": "warden",
+      "args": ["mcp"],
       "env": {
         "ADR_DIRS": "./docs/adr",
         "ADR_CACHE_DIR": "./.adr-cache"
@@ -158,4 +155,4 @@ pnpm test
 
 ## License
 
-This project is licensed under the [MIT License](file:///home/paul/PROJ/adr-search-and-lifecycle/LICENSE).
+This project is licensed under the [MIT License](LICENSE).

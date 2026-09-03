@@ -6,28 +6,53 @@ Autonomous agents operating inside architecture repositories require two synchro
 1. A runtime protocol transport (MCP) providing deterministic semantic search, overlap scoring, and graph traversal tools.
 2. Behavioral instruction runbooks (Skills) that force the agent harness to invoke pre-flight checks before modifying files and to validate graph topologies before submitting changes.
 
-This guide provides concrete configurations to wire ADR Warden (`adr-warden`) and its deliverable skills into common agent harness clients.
+This guide provides step-by-step instructions for acquiring ADR Warden from Git, building the CLI, and configuring the MCP server and skills across standard harness clients.
 
 ---
 
-## Prerequisites and Build
+## Repository and Prerequisites
 
-The engine requires Node.js (version 20 or higher) and `pnpm`.
+- **GitHub Repository**: [https://github.com/paulprogrammer/adr-warden](https://github.com/paulprogrammer/adr-warden)
+- **Runtime**: Node.js (version 20 or higher)
+- **Package Manager**: `pnpm` (version 9 or higher)
+
+---
+
+## Installation Options
+
+### Option 1: Clone and Build Locally (Recommended)
+
+Clone the repository and build the TypeScript binaries:
 
 ```bash
-# Clone and navigate to the engine directory
-cd /path/to/adr-warden
+git clone https://github.com/paulprogrammer/adr-warden.git
+cd adr-warden
 
-# Install dependencies and compile TypeScript to dist/
+# Install dependencies and compile
 pnpm install
 pnpm run build
 
-# Verify build stability
+# Verify build and test suite
 pnpm test
 ```
 
-The compiled CLI entry point is located at:
-`<ABSOLUTE_PATH_TO_ENGINE>/dist/cli.js`
+To make the `warden` and `adr-warden` commands accessible globally on your system path:
+
+```bash
+pnpm link --global
+```
+
+### Option 2: Install Directly from GitHub via Global Package Manager
+
+You can install ADR Warden globally directly from the Git repository:
+
+```bash
+pnpm add -g github:paulprogrammer/adr-warden
+# or using npm:
+# npm install -g github:paulprogrammer/adr-warden
+```
+
+Once installed globally, `warden` is directly available in your terminal and MCP client configurations.
 
 ---
 
@@ -41,7 +66,7 @@ Variable | Default | Description
 `ADR_CACHE_DIR` | `./.adr-cache` | Directory path where vector embeddings and document hashes are persisted.
 
 > [!IMPORTANT]
-> Always supply absolute paths or paths relative to the consuming repository workspace root. Exclude historical or legacy archive folders from `ADR_DIRS` to avoid indexing superseded schemas.
+> Supply paths relative to the consuming repository workspace root or provide absolute paths. Exclude historical or legacy archive directories from `ADR_DIRS` to prevent indexing obsolete standards.
 
 ---
 
@@ -49,20 +74,17 @@ Variable | Default | Description
 
 ### 1. Antigravity and Agentic CLI Workspaces
 
-Antigravity automatically discovers MCP servers and project skills defined in your workspace root.
+Antigravity automatically discovers MCP servers and project skills defined within a workspace.
 
 #### MCP Server Registration: `.agents/mcp_config.json`
-Add the `adr-warden` server configuration:
+Add the `adr-warden` server to your repository's `.agents/mcp_config.json`:
 
 ```json
 {
   "mcpServers": {
     "adr-warden": {
-      "command": "node",
-      "args": [
-        "/path/to/adr-warden/dist/cli.js",
-        "mcp"
-      ],
+      "command": "warden",
+      "args": ["mcp"],
       "env": {
         "ADR_DIRS": "./docs/adr",
         "ADR_CACHE_DIR": "./.adr-cache"
@@ -72,66 +94,42 @@ Add the `adr-warden` server configuration:
 }
 ```
 
+*Note: If `warden` is not linked globally on your system `$PATH`, specify the compiled entry point directly:*
+```json
+"command": "node",
+"args": ["/path/to/adr-warden/dist/cli.js", "mcp"]
+```
+
 #### Skill Installation
-Copy the deliverable skills from this repository into the target workspace `.agents/skills/` directory:
+From your target architecture repository root, install the deliverable skills into `.agents/skills/`:
 
 ```bash
-# From the target architecture repository root:
 mkdir -p .agents/skills
 
+# If cloned locally:
 cp -r /path/to/adr-warden/skills/adr-authoring-guard .agents/skills/
 cp -r /path/to/adr-warden/skills/adr-graph-lifecycle .agents/skills/
-```
 
-Once placed in `.agents/skills/`, the harness progressively discloses these workflows whenever the agent is tasked with authoring an ADR or evaluating dependencies.
+# Or fetch directly from GitHub without keeping a local clone:
+git clone --depth 1 https://github.com/paulprogrammer/adr-warden.git /tmp/adr-warden
+cp -r /tmp/adr-warden/skills/* .agents/skills/
+rm -rf /tmp/adr-warden
+```
 
 ---
 
-### 2. Claude Desktop
+### 2. Claude Code (CLI)
 
-Claude Desktop configures MCP servers globally via its primary configuration file:
-- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-- **Linux**: `~/.config/Claude/claude_desktop_config.json`
-- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+Claude Code (`claude`) supports Model Context Protocol servers at project scope (saved in `.mcp.json`) or global user scope.
 
-#### Configuration Entry
-
-```json
-{
-  "mcpServers": {
-    "adr-warden": {
-      "command": "node",
-      "args": [
-        "/path/to/adr-warden/dist/cli.js",
-        "mcp"
-      ],
-      "env": {
-        "ADR_DIRS": "/path/to/target-architecture-repo/docs/adr",
-        "ADR_CACHE_DIR": "/path/to/target-architecture-repo/.adr-cache"
-      }
-    }
-  }
-}
-```
-
-#### Skill Ingestion (Prompt Integration)
-Claude Desktop does not support native progressive skill folders. To enforce the authoring guard and lifecycle rules, append the contents of `skills/adr-authoring-guard/SKILL.md` and `skills/adr-graph-lifecycle/SKILL.md` directly into your Project Instructions or system prompt.
-
----
-
-### 3. Claude Code (CLI)
-
-Claude Code (`claude`) supports Model Context Protocol servers at both project scope (stored in `.mcp.json`) and global user scope.
-
-#### Option A: CLI Command Registration
+#### Option A: Command Line Registration
 Run from the root of your target architecture repository:
 
 ```bash
-# Register at project scope (.mcp.json)
 claude mcp add -s project adr-warden \
   -e ADR_DIRS="./docs/adr" \
   -e ADR_CACHE_DIR="./.adr-cache" \
-  -- node /path/to/adr-warden/dist/cli.js mcp
+  -- warden mcp
 ```
 
 #### Option B: Declarative Configuration via `.mcp.json`
@@ -141,11 +139,8 @@ Create or update `.mcp.json` in the root of the target architecture repository:
 {
   "mcpServers": {
     "adr-warden": {
-      "command": "node",
-      "args": [
-        "/path/to/adr-warden/dist/cli.js",
-        "mcp"
-      ],
+      "command": "warden",
+      "args": ["mcp"],
       "env": {
         "ADR_DIRS": "./docs/adr",
         "ADR_CACHE_DIR": "./.adr-cache"
@@ -156,7 +151,7 @@ Create or update `.mcp.json` in the root of the target architecture repository:
 ```
 
 #### Rule Enforcement: `CLAUDE.md`
-Claude Code automatically reads `CLAUDE.md` at project startup. Add the following directives to enforce the pre-flight overlap guard and graph validation lifecycle:
+Claude Code automatically ingests `CLAUDE.md` at project launch. Add the following directives to enforce the authoring guard and lifecycle validations:
 
 ```markdown
 ## Architectural Decision Records (ADRs)
@@ -172,9 +167,38 @@ When evaluating or drafting architecture records under docs/adr/:
 
 ---
 
+### 3. Claude Desktop
+
+Claude Desktop configures MCP servers via its primary configuration file:
+- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Linux**: `~/.config/Claude/claude_desktop_config.json`
+- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+
+#### Configuration Entry
+
+```json
+{
+  "mcpServers": {
+    "adr-warden": {
+      "command": "warden",
+      "args": ["mcp"],
+      "env": {
+        "ADR_DIRS": "/absolute/path/to/target-architecture-repo/docs/adr",
+        "ADR_CACHE_DIR": "/absolute/path/to/target-architecture-repo/.adr-cache"
+      }
+    }
+  }
+}
+```
+
+#### Skill Ingestion
+Claude Desktop does not support progressive skill directories. Copy the directives from `skills/adr-authoring-guard/SKILL.md` and `skills/adr-graph-lifecycle/SKILL.md` directly into your Project Instructions or system prompt.
+
+---
+
 ### 4. Cursor IDE
 
-Cursor supports MCP servers configured at the workspace level or user settings level.
+Cursor supports MCP servers configured at the workspace level or in user settings.
 
 #### Configuration Entry: `.cursor/mcp.json`
 
@@ -182,11 +206,8 @@ Cursor supports MCP servers configured at the workspace level or user settings l
 {
   "mcpServers": {
     "adr-warden": {
-      "command": "node",
-      "args": [
-        "/path/to/adr-warden/dist/cli.js",
-        "mcp"
-      ],
+      "command": "warden",
+      "args": ["mcp"],
       "env": {
         "ADR_DIRS": "./docs/adr",
         "ADR_CACHE_DIR": "./.adr-cache"
@@ -213,19 +234,14 @@ When working with files in docs/adr/ or designing architecture:
 
 ### 5. VS Code (Cline, Roo Code, Continue)
 
-For VS Code extensions implementing the Model Context Protocol (such as Cline or Roo Code), configure the server under the extension's MCP configuration settings.
-
-#### Configuration Entry: `cline_mcp_settings.json` / `roo_code_mcp_settings.json`
+For VS Code extensions implementing the Model Context Protocol, configure the server under your extension's MCP configuration settings (e.g. `cline_mcp_settings.json`).
 
 ```json
 {
   "mcpServers": {
     "adr-warden": {
-      "command": "node",
-      "args": [
-        "/path/to/adr-warden/dist/cli.js",
-        "mcp"
-      ],
+      "command": "warden",
+      "args": ["mcp"],
       "env": {
         "ADR_DIRS": "./docs/adr",
         "ADR_CACHE_DIR": "./.adr-cache"
@@ -251,22 +267,17 @@ For VS Code extensions implementing the Model Context Protocol (such as Cline or
 
 ### 6. Windsurf (Codeium)
 
-Windsurf supports MCP servers via its central configuration file (`~/.codeium/windsurf/mcp_config.json`).
-
-#### Configuration Entry
+Configure the server in `~/.codeium/windsurf/mcp_config.json`:
 
 ```json
 {
   "mcpServers": {
     "adr-warden": {
-      "command": "node",
-      "args": [
-        "/path/to/adr-warden/dist/cli.js",
-        "mcp"
-      ],
+      "command": "warden",
+      "args": ["mcp"],
       "env": {
-        "ADR_DIRS": "/path/to/target-architecture-repo/docs/adr",
-        "ADR_CACHE_DIR": "/path/to/target-architecture-repo/.adr-cache"
+        "ADR_DIRS": "/absolute/path/to/target-architecture-repo/docs/adr",
+        "ADR_CACHE_DIR": "/absolute/path/to/target-architecture-repo/.adr-cache"
       }
     }
   }
@@ -280,14 +291,14 @@ Windsurf supports MCP servers via its central configuration file (`~/.codeium/wi
 Validate your configuration in three steps before deploying autonomous agents:
 
 ### Step 1: Verify Direct CLI Indexing and Validation
-Run the binary directly against the target ADR catalog:
+Run the binary directly against your target ADR catalog:
 
 ```bash
 # Verify directory scan and embedding cache generation
-node /path/to/adr-warden/dist/cli.js index /path/to/target-architecture-repo/docs/adr
+warden index ./docs/adr
 
 # Verify graph structural validation
-node /path/to/adr-warden/dist/cli.js graph validate
+warden graph validate
 ```
 
 Confirm that the validation report outputs:
@@ -297,7 +308,7 @@ Confirm that the validation report outputs:
 Use the official MCP inspector to verify protocol handshake and tool registration over stdio:
 
 ```bash
-npx @modelcontextprotocol/inspector node /path/to/adr-warden/dist/cli.js mcp
+npx @modelcontextprotocol/inspector warden mcp
 ```
 
 Confirm that all 10 tools are enumerated:
