@@ -1,0 +1,209 @@
+#!/usr/bin/env node
+
+import { readFileSync, existsSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { parseArgs } from 'node:util';
+import { AdrEngine } from './engine.js';
+import { parseAdrMarkdown } from './parser.js';
+import { runStdioServer, discoverDefaultAdrDirs } from './mcp.js';
+
+async function main() {
+  const args = process.argv.slice(2);
+  const command = args[0] || 'help';
+
+  if (command === 'mcp') {
+    await runStdioServer();
+    return;
+  }
+
+  const cacheDir = process.env.ADR_CACHE_DIR || resolve(process.cwd(), '.adr-cache');
+  const engine = new AdrEngine({ cacheDir });
+
+  switch (command) {
+    case 'index': {
+      const dirs = args.slice(1);
+      const targetDirs = dirs.length > 0 ? dirs.map((d) => resolve(d)) : discoverDefaultAdrDirs();
+
+      if (targetDirs.length === 0) {
+        process.stderr.write(
+          'Error: No ADR directories specified or discovered. Specify directories: adr-vector index <dir1> <dir2>\n'
+        );
+        process.exit(1);
+      }
+
+      process.stdout.write(`Indexing ADRs from: ${targetDirs.join(', ')}...\n`);
+      const stats = await engine.indexDirectories(targetDirs);
+      process.stdout.write(
+        `Indexing complete in ${stats.durationMs}ms: ${stats.totalFiles} files scanned, ${stats.indexedFiles} newly indexed/updated, ${stats.cachedFiles} cached, ${stats.totalChunks} chunks.\n`
+      );
+      break;
+    }
+
+    case 'search': {
+      const query = args.slice(1).join(' ').trim();
+      if (!query) {
+        process.stderr.write('Error: Search query required: adr-vector search "query"\n');
+        process.exit(1);
+      }
+
+      // Auto-index if vector store is empty
+      if (engine.getVectorStore().getDocumentCount() === 0) {
+        const defaultDirs = discoverDefaultAdrDirs();
+        if (defaultDirs.length > 0) {
+          process.stdout.write(`Index empty. Auto-indexing ${defaultDirs.join(', ')}...\n`);
+          await engine.indexDirectories(defaultDirs);
+        }
+      }
+
+      const results = await engine.search(query, { topK: 5 });
+      if (results.length === 0) {
+        process.stdout.write(`No ADRs matched "${query}".\n`);
+        return;
+      }
+
+      process.stdout.write(`\nTop matches for "${query}":\n\n`);
+      for (let i = 0; i < results.length; i++) {
+        const r = results[i];
+        process.stdout.write(
+          `${i + 1}. [ADR-${r.id}] ${r.title} (Match: ${(r.score * 100).toFixed(1)}%, Status: ${r.status})\n`
+        );
+        process.stdout.write(`   File: ${r.filePath}\n`);
+        process.stdout.write(`   Section: ${r.matchedSection}\n`);
+        process.stdout.write(`   Snippet: ${r.excerpt.slice(0, 160).replace(/\n/g, ' ')}...\n\n`);
+      }
+      break;
+    }
+
+    case 'check': {
+      const { values } = parseArgs({
+        args: args.slice(1),
+        options: {
+          file: { type: 'string', short: 'f' },
+          title: { type: 'string', short: 't' },
+          context: { type: 'string', short: 'c' },
+          decision: { type: 'string', short: 'd' },
+        },
+        allowPositionals: true,
+      });
+
+      let draftTitle = values.title || '';
+      let draftContext = values.context || '';
+      let draftDecision = values.decision || '';
+
+      if (values.file) {
+        const filePath = resolve(values.file);
+        if (!existsSync(filePath)) {
+          process.stderr.write(`Error: File not found: ${filePath}\n`);
+          process.exit(1);
+        }
+        const parsed = parseAdrMarkdown(filePath);
+        draftTitle = parsed.metadata.title;
+        draftContext = parsed.sections.context;
+        draftDecision = parsed.sections.decision;
+      }
+
+      if (!draftTitle && !draftContext && !draftDecision) {
+        process.stderr.write(
+          'Error: Provide --file <path> or --title, --context, and --decision flags.\n'
+        );
+        process.exit(1);
+      }
+
+      // Auto-index if vector store is empty
+      if (engine.getVectorStore().getDocumentCount() === 0) {
+        const defaultDirs = discoverDefaultAdrDirs();
+        if (defaultDirs.length > 0) {
+          process.stdout.write(`Index empty. Auto-indexing ${defaultDirs.join(', ')}...\n`);
+          await engine.indexDirectories(defaultDirs);
+        }
+      }
+
+      process.stdout.write(`Evaluating overlap for "${draftTitle}"...\n\n`);
+      const analysis = await engine.checkOverlap({
+        title: draftTitle,
+        context: draftContext,
+        decision: draftDecision,
+      });
+
+      process.stdout.write(`VERDICT: ${analysis.verdict} (Confidence: ${Math.round(analysis.confidence * 100)}%)\n`);
+      process.stdout.write(`SUMMARY: ${analysis.summary}\n\n`);
+
+      process.stdout.write('ACTIONABLE GUIDANCE:\n');
+      for (const item of analysis.actionableGuidance) {
+        process.stdout.write(`  - ${item}\n`);
+      }
+      process.stdout.write('\n');
+
+      if (analysis.topMatches.length > 0) {
+        process.stdout.write('TOP MATCHES:\n');
+        for (const m of analysis.topMatches) {
+          process.stdout.write(
+            `  * ADR-${m.adrId}: ${m.title} [${m.verdict}] (Overall: ${Math.round(m.overallSimilarity * 100)}%, Context: ${Math.round(m.contextSimilarity * 100)}%, Decision: ${Math.round(m.decisionSimilarity * 100)}%)\n`
+          );
+          process.stdout.write(`    Path: ${m.filePath}\n`);
+          process.stdout.write(`    Advice: ${m.recommendation}\n`);
+        }
+      }
+      break;
+    }
+
+    case 'list': {
+      const all = engine.listAdrs();
+      if (all.length === 0) {
+        const defaultDirs = discoverDefaultAdrDirs();
+        if (defaultDirs.length > 0) {
+          await engine.indexDirectories(defaultDirs);
+        }
+      }
+      const refreshed = engine.listAdrs();
+      process.stdout.write(`\nIndexed ADR Catalog (${refreshed.length} records):\n\n`);
+      for (const d of refreshed) {
+        process.stdout.write(`- ADR-${d.id}: ${d.metadata.title} [${d.metadata.status}] (${d.metadata.date || 'no date'})\n`);
+        process.stdout.write(`  Path: ${d.filePath}\n`);
+      }
+      break;
+    }
+
+    case 'get': {
+      const id = args[1];
+      if (!id) {
+        process.stderr.write('Error: ADR ID required: adr-vector get <id>\n');
+        process.exit(1);
+      }
+      const doc = engine.getAdr(id);
+      if (!doc) {
+        process.stderr.write(`Error: ADR "${id}" not found.\n`);
+        process.exit(1);
+      }
+      process.stdout.write(`\nADR-${doc.id}: ${doc.metadata.title}\n`);
+      process.stdout.write(`Status: ${doc.metadata.status}\n`);
+      process.stdout.write(`Path: ${doc.filePath}\n\n`);
+      process.stdout.write(`--- Context ---\n${doc.sections.context}\n\n`);
+      process.stdout.write(`--- Decision ---\n${doc.sections.decision}\n`);
+      break;
+    }
+
+    case 'help':
+    default: {
+      process.stdout.write(`
+ADR Search & Vector Lifecycle Engine
+
+Usage:
+  adr-vector mcp                        Start Model Context Protocol (MCP) server on stdio
+  adr-vector index [dir...]             Index ADR directories with incremental embedding cache
+  adr-vector search <query>             Semantic vector search across indexed ADRs
+  adr-vector check --file <path>        Check a draft ADR file for overlap and duplicate risk
+  adr-vector check -t <title> -c <ctx>  Check draft components for overlap
+  adr-vector list                       List all indexed ADRs
+  adr-vector get <id>                   View details of an indexed ADR
+  adr-vector help                       Show this help message
+`);
+      break;
+    }
+  }
+}
+
+main().catch((err) => {
+  process.stderr.write(`Error: ${(err as Error).message}\n`);
+  process.exit(1);
+});

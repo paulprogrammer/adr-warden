@@ -1,0 +1,442 @@
+import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { z } from 'zod';
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { AdrEngine } from './engine.js';
+import type { AdrStatus, SectionType } from './types.js';
+
+export interface McpServerConfig {
+  adrDirs?: string[];
+  cacheDir?: string;
+  modelName?: string;
+}
+
+export function discoverDefaultAdrDirs(configuredDirs?: string[]): string[] {
+  if (configuredDirs && configuredDirs.length > 0) {
+    return configuredDirs.map((d) => resolve(d));
+  }
+
+  const envDirs = process.env.ADR_DIRS;
+  if (envDirs) {
+    return envDirs
+      .split(',')
+      .map((d) => resolve(d.trim()))
+      .filter((d) => existsSync(d));
+  }
+
+  const candidates = [
+    './docs/adr',
+    './legacy_adr',
+    './adr',
+    './docs/adrs',
+    './docs/adr',
+    './docs/adr',
+  ];
+
+  const found: string[] = [];
+  for (const c of candidates) {
+    const resolved = resolve(c);
+    if (existsSync(resolved)) {
+      found.push(resolved);
+    }
+  }
+
+  return found;
+}
+
+export function createMcpServer(config: McpServerConfig = {}): {
+  server: McpServer;
+  engine: AdrEngine;
+  init: () => Promise<void>;
+} {
+  const cacheDir = config.cacheDir || process.env.ADR_CACHE_DIR || resolve(process.cwd(), '.adr-cache');
+  const engine = new AdrEngine({
+    cacheDir,
+    modelName: config.modelName,
+  });
+
+  const server = new McpServer({
+    name: 'adr-search-engine',
+    version: '1.0.0',
+  });
+
+  const adrDirs = discoverDefaultAdrDirs(config.adrDirs);
+
+  const init = async () => {
+    if (adrDirs.length > 0) {
+      await engine.indexDirectories(adrDirs);
+    }
+  };
+
+  // Tool 1: check_adr_overlap
+  server.tool(
+    'check_adr_overlap',
+    'Checks a proposed or draft ADR against indexed records to detect duplicate decisions, conflicting directions, or extension targets before creating a new ADR.',
+    {
+      title: z.string().describe('Proposed title of the draft ADR'),
+      context: z.string().describe('Context, problem statement, or technical story'),
+      decision: z.string().describe('Proposed architectural decision outcome and chosen option'),
+      options: z.string().optional().describe('Considered options or alternatives evaluated'),
+      drivers: z.string().optional().describe('Decision drivers or evaluation criteria'),
+      threshold: z.number().optional().describe('Similarity cutoff threshold (default 0.50)'),
+      top_k: z.number().optional().describe('Maximum matches to evaluate (default 5)'),
+    },
+    async ({ title, context, decision, options, drivers, threshold, top_k }) => {
+      try {
+        const analysis = await engine.checkOverlap(
+          { title, context, decision, options, drivers },
+          { threshold, topK: top_k }
+        );
+
+        let output = `## ADR Overlap Analysis Verdict: ${analysis.verdict}\n\n`;
+        output += `Confidence: ${Math.round(analysis.confidence * 100)}%\n\n`;
+        output += `### Summary\n${analysis.summary}\n\n`;
+
+        output += `### Actionable Guidance\n`;
+        for (const item of analysis.actionableGuidance) {
+          output += `- ${item}\n`;
+        }
+        output += '\n';
+
+        if (analysis.topMatches.length > 0) {
+          output += `### Top Matching ADRs\n\n`;
+          for (const m of analysis.topMatches) {
+            output += `#### ADR-${m.adrId}: ${m.title} (${m.status})\n`;
+            output += `- **Verdict:** ${m.verdict}\n`;
+            output += `- **Similarities:** Overall ${Math.round(m.overallSimilarity * 100)}%, Context ${Math.round(m.contextSimilarity * 100)}%, Decision ${Math.round(m.decisionSimilarity * 100)}%\n`;
+            output += `- **File:** \`${m.filePath}\`\n`;
+            output += `- **Recommendation:** ${m.recommendation}\n`;
+            output += `- **Excerpt:**\n> ${m.matchedExcerpt.replace(/\n/g, '\n> ')}\n\n`;
+          }
+        } else {
+          output += `No existing ADRs exceeded the similarity threshold.\n`;
+        }
+
+        return {
+          content: [{ type: 'text', text: output }],
+        };
+      } catch (error) {
+        return {
+          isError: true,
+          content: [
+            {
+              type: 'text',
+              text: `Error during ADR overlap analysis: ${(error as Error).message}`,
+            },
+          ],
+        };
+      }
+    }
+  );
+
+  // Tool 2: search_adrs
+  server.tool(
+    'search_adrs',
+    'Semantically search Architecture Decision Records using natural language queries.',
+    {
+      query: z.string().describe('Search query or architectural question'),
+      top_k: z.number().optional().describe('Maximum results to return (default 5)'),
+      threshold: z.number().optional().describe('Minimum similarity threshold (default 0.35)'),
+      status: z.string().optional().describe('Filter by ADR status (e.g. proposed, accepted, deprecated, superseded)'),
+      section: z.enum(['all', 'summary', 'context', 'decision', 'options']).optional().describe('Target specific section to match'),
+    },
+    async ({ query, top_k, threshold, status, section }) => {
+      try {
+        const sectionType = section && section !== 'all' ? (section as SectionType) : undefined;
+        const results = await engine.search(query, {
+          topK: top_k ?? 5,
+          threshold: threshold ?? 0.35,
+          sectionType,
+          statusFilter: status ? [status] : undefined,
+        });
+
+        if (results.length === 0) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `No ADRs matched the query "${query}" with similarity threshold ${threshold ?? 0.35}.`,
+              },
+            ],
+          };
+        }
+
+        let output = `## Search Results for "${query}" (${results.length} found)\n\n`;
+        for (let i = 0; i < results.length; i++) {
+          const r = results[i];
+          output += `### ${i + 1}. ADR-${r.id}: ${r.title}\n`;
+          output += `- **Score:** ${(r.score * 100).toFixed(1)}%\n`;
+          output += `- **Status:** ${r.status}\n`;
+          output += `- **File:** \`${r.filePath}\`\n`;
+          output += `- **Matched Section:** ${r.matchedSection}\n`;
+          if (r.metadata.deciders && r.metadata.deciders.length > 0) {
+            output += `- **Deciders:** ${r.metadata.deciders.join(', ')}\n`;
+          }
+          if (r.metadata.extends && r.metadata.extends.length > 0) {
+            output += `- **Extends:** ADR-${r.metadata.extends.join(', ADR-')}\n`;
+          }
+          if (r.metadata.supersedes && r.metadata.supersedes.length > 0) {
+            output += `- **Supersedes:** ADR-${r.metadata.supersedes.join(', ADR-')}\n`;
+          }
+          output += `- **Excerpt:**\n> ${r.excerpt.slice(0, 300).replace(/\n/g, '\n> ')}\n\n`;
+        }
+
+        return {
+          content: [{ type: 'text', text: output }],
+        };
+      } catch (error) {
+        return {
+          isError: true,
+          content: [
+            {
+              type: 'text',
+              text: `Error during ADR search: ${(error as Error).message}`,
+            },
+          ],
+        };
+      }
+    }
+  );
+
+  // Tool 3: get_adr
+  server.tool(
+    'get_adr',
+    'Retrieve complete metadata, context, decision outcome, and consequences for an ADR by ID or file path.',
+    {
+      id: z.string().describe('ADR identifier (e.g. "0001", "ADR-001", or file path)'),
+    },
+    async ({ id }) => {
+      const doc = engine.getAdr(id);
+      if (!doc) {
+        return {
+          isError: true,
+          content: [
+            {
+              type: 'text',
+              text: `ADR "${id}" not found in index. Verify the ID or run index_adrs.`,
+            },
+          ],
+        };
+      }
+
+      let output = `# ADR-${doc.id}: ${doc.metadata.title}\n\n`;
+      output += `- **Status:** ${doc.metadata.status}\n`;
+      if (doc.metadata.date) output += `- **Date:** ${doc.metadata.date}\n`;
+      if (doc.metadata.category) output += `- **Category:** ${doc.metadata.category}\n`;
+      if (doc.metadata.deciders) output += `- **Deciders:** ${doc.metadata.deciders.join(', ')}\n`;
+      if (doc.metadata.technicalStory) output += `- **Technical Story:** ${doc.metadata.technicalStory}\n`;
+      if (doc.metadata.supersedes) output += `- **Supersedes:** ADR-${doc.metadata.supersedes.join(', ADR-')}\n`;
+      if (doc.metadata.supersededBy) output += `- **Superseded By:** ADR-${doc.metadata.supersededBy.join(', ADR-')}\n`;
+      if (doc.metadata.extends) output += `- **Extends:** ADR-${doc.metadata.extends.join(', ADR-')}\n`;
+      if (doc.metadata.amends) output += `- **Amends:** ADR-${doc.metadata.amends.join(', ADR-')}\n`;
+      output += `- **File Path:** \`${doc.filePath}\`\n\n`;
+
+      if (doc.sections.context) {
+        output += `## Context and Problem Statement\n${doc.sections.context}\n\n`;
+      }
+      if (doc.sections.decisionDrivers) {
+        output += `## Decision Drivers\n${doc.sections.decisionDrivers}\n\n`;
+      }
+      if (doc.sections.consideredOptions) {
+        output += `## Considered Options\n${doc.sections.consideredOptions}\n\n`;
+      }
+      if (doc.sections.decision) {
+        output += `## Decision Outcome\n${doc.sections.decision}\n\n`;
+      }
+      if (doc.sections.consequences) {
+        output += `## Consequences\n${doc.sections.consequences}\n\n`;
+      }
+      if (doc.sections.diagrams && doc.sections.diagrams.length > 0) {
+        output += `## Architecture Diagrams\n`;
+        for (const diag of doc.sections.diagrams) {
+          output += `\`\`\`mermaid\n${diag}\n\`\`\`\n\n`;
+        }
+      }
+
+      return {
+        content: [{ type: 'text', text: output }],
+      };
+    }
+  );
+
+  // Tool 4: list_adrs
+  server.tool(
+    'list_adrs',
+    'Lists all indexed Architecture Decision Records with their status, title, and relations.',
+    {
+      status: z.string().optional().describe('Filter by status (e.g. proposed, accepted, deprecated, superseded)'),
+    },
+    async ({ status }) => {
+      const adrs = engine.listAdrs({ status });
+
+      let output = `## Indexed ADR Catalog (${adrs.length} records)\n\n`;
+      output += `| ID | Title | Status | Date | Relations |\n`;
+      output += `| :--- | :--- | :--- | :--- | :--- |\n`;
+
+      for (const doc of adrs) {
+        const relations: string[] = [];
+        if (doc.metadata.supersedes?.length) {
+          relations.push(`supersedes [${doc.metadata.supersedes.join(',')}]`);
+        }
+        if (doc.metadata.extends?.length) {
+          relations.push(`extends [${doc.metadata.extends.join(',')}]`);
+        }
+        if (doc.metadata.amends?.length) {
+          relations.push(`amends [${doc.metadata.amends.join(',')}]`);
+        }
+        output += `| **${doc.id}** | ${doc.metadata.title} | ${doc.metadata.status} | ${doc.metadata.date || '-'} | ${relations.join(', ') || '-'} |\n`;
+      }
+
+      return {
+        content: [{ type: 'text', text: output }],
+      };
+    }
+  );
+
+  // Tool 5: index_adrs
+  server.tool(
+    'index_adrs',
+    'Index or re-index directories containing ADR markdown files, using incremental hash caching.',
+    {
+      directories: z.array(z.string()).optional().describe('Directories to scan (defaults to configured or discovered paths)'),
+      force: z.boolean().optional().describe('Force re-indexing and ignore embedding cache (default false)'),
+    },
+    async ({ directories, force }) => {
+      try {
+        const targetDirs = directories && directories.length > 0
+          ? directories.map((d) => resolve(d))
+          : adrDirs;
+
+        if (targetDirs.length === 0) {
+          return {
+            isError: true,
+            content: [
+              {
+                type: 'text',
+                text: 'No ADR directories specified or discovered. Provide paths or set ADR_DIRS environment variable.',
+              },
+            ],
+          };
+        }
+
+        const stats = await engine.indexDirectories(targetDirs, { force });
+
+        let output = `## ADR Indexing Completed\n\n`;
+        output += `- **Directories Scanned:** ${targetDirs.map((d) => `\`${d}\``).join(', ')}\n`;
+        output += `- **Total Files:** ${stats.totalFiles}\n`;
+        output += `- **Newly Indexed / Updated:** ${stats.indexedFiles}\n`;
+        output += `- **Cached (Unchanged):** ${stats.cachedFiles}\n`;
+        output += `- **Total Vector Chunks:** ${stats.totalChunks}\n`;
+        output += `- **Duration:** ${stats.durationMs}ms\n`;
+
+        return {
+          content: [{ type: 'text', text: output }],
+        };
+      } catch (error) {
+        return {
+          isError: true,
+          content: [
+            {
+              type: 'text',
+              text: `Error indexing ADR directories: ${(error as Error).message}`,
+            },
+          ],
+        };
+      }
+    }
+  );
+
+  // Resource 1: adr://catalog
+  server.resource(
+    'adr-catalog',
+    'adr://catalog',
+    async (uri) => {
+      const all = engine.listAdrs();
+      const catalog = all.map((d) => ({
+        id: d.id,
+        title: d.metadata.title,
+        status: d.metadata.status,
+        date: d.metadata.date,
+        deciders: d.metadata.deciders,
+        filePath: d.filePath,
+        relations: {
+          supersedes: d.metadata.supersedes,
+          supersededBy: d.metadata.supersededBy,
+          extends: d.metadata.extends,
+          amends: d.metadata.amends,
+        },
+      }));
+
+      return {
+        contents: [
+          {
+            uri: uri.href,
+            mimeType: 'application/json',
+            text: JSON.stringify(catalog, null, 2),
+          },
+        ],
+      };
+    }
+  );
+
+  // Resource 2: adr://file/{id}
+  server.resource(
+    'adr-document',
+    new ResourceTemplate('adr://file/{id}', { list: undefined }),
+    async (uri, { id }) => {
+      const doc = engine.getAdr(id as string);
+      if (!doc) {
+        throw new Error(`ADR with ID ${id} not found`);
+      }
+
+      return {
+        contents: [
+          {
+            uri: uri.href,
+            mimeType: 'text/markdown',
+            text: doc.rawContent,
+          },
+        ],
+      };
+    }
+  );
+
+  // Prompt 1: check_draft_adr
+  server.prompt(
+    'check_draft_adr',
+    'Template prompt for checking prior art before authoring a new ADR',
+    {
+      title: z.string().describe('Proposed ADR title'),
+      problem_statement: z.string().describe('Problem statement and background context'),
+      proposed_decision: z.string().describe('Proposed architectural decision'),
+    },
+    ({ title, problem_statement, proposed_decision }) => ({
+      messages: [
+        {
+          role: 'user',
+          content: {
+            type: 'text',
+            text: `Please evaluate whether our architecture catalog already addresses this problem before writing a new ADR:
+
+Title: ${title}
+Problem Context: ${problem_statement}
+Proposed Decision: ${proposed_decision}
+
+Run the 'check_adr_overlap' tool and evaluate if we should enrich an existing ADR, mark this as an extension, or proceed with a new record.`,
+          },
+        },
+      ],
+    })
+  );
+
+  return { server, engine, init };
+}
+
+export async function runStdioServer(config: McpServerConfig = {}): Promise<void> {
+  const { server, init } = createMcpServer(config);
+  await init();
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+  process.stderr.write('ADR Search MCP server running on stdio transport.\n');
+}
