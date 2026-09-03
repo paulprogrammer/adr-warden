@@ -53,6 +53,11 @@ describe('MCP Server Integration via InMemoryTransport', () => {
     expect(names).toContain('get_adr');
     expect(names).toContain('list_adrs');
     expect(names).toContain('index_adrs');
+    expect(names).toContain('adr_graph_lineage');
+    expect(names).toContain('adr_graph_impact');
+    expect(names).toContain('adr_graph_dependencies');
+    expect(names).toContain('adr_graph_validate');
+    expect(names).toContain('adr_graph_mermaid');
   });
 
   it('calls search_adrs tool', async () => {
@@ -121,5 +126,68 @@ describe('MCP Server Integration via InMemoryTransport', () => {
     expect(Array.isArray(json)).toBe(true);
     expect(json.length).toBeGreaterThan(0);
     expect(json.some((item: any) => item.id === '0001')).toBe(true);
+  });
+
+  it('calls adr_graph_validate tool', async () => {
+    const result = await client.callTool({
+      name: 'adr_graph_validate',
+      arguments: {},
+    });
+
+    const text = (result.content as Array<{ type: string; text: string }>)[0].text;
+    expect(text).toContain('ADR Knowledge Graph Validation Report');
+    expect(text).toContain('Nodes Evaluated');
+  });
+
+  it('calls adr_graph_impact tool', async () => {
+    const result = await client.callTool({
+      name: 'adr_graph_impact',
+      arguments: {
+        id: '0001',
+      },
+    });
+
+    const text = (result.content as Array<{ type: string; text: string }>)[0].text;
+    expect(text).toContain('Architectural Impact Analysis: ADR-0001');
+    expect(text).toContain('Blast Radius Score');
+  });
+
+  it('calls adr_graph_lineage tool', async () => {
+    const result = await client.callTool({
+      name: 'adr_graph_lineage',
+      arguments: {
+        id: '0001',
+      },
+    });
+
+    const text = (result.content as Array<{ type: string; text: string }>)[0].text;
+    expect(text).toContain('Lineage Report for ADR-0001');
+    expect(text).toContain('Active Canonical Standard');
+  });
+
+  it('calls adr_graph_mermaid tool', async () => {
+    const result = await client.callTool({
+      name: 'adr_graph_mermaid',
+      arguments: {
+        focus_id: '0001',
+        radius: 1,
+      },
+    });
+
+    const text = (result.content as Array<{ type: string; text: string }>)[0].text;
+    expect(text).toContain('flowchart TD');
+    expect(text).toContain('N_0001');
+  });
+
+  it('reads adr://graph/validation resource', async () => {
+    const resource = await client.readResource({
+      uri: 'adr://graph/validation',
+    });
+
+    expect(resource.contents).toBeDefined();
+    const data = JSON.parse(resource.contents[0].text as string);
+    expect(data.totalNodes).toBeGreaterThan(0);
+    expect(Array.isArray(data.errors)).toBe(true);
+    expect(Array.isArray(data.warnings)).toBe(true);
   });
 });

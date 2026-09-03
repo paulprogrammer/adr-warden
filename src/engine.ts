@@ -13,6 +13,7 @@ import type {
   SectionType,
 } from './types.js';
 import { VectorStore } from './vector-store.js';
+import { AdrKnowledgeGraph } from './graph.js';
 
 export interface AdrEngineOptions {
   cacheDir?: string;
@@ -27,19 +28,24 @@ export class AdrEngine {
   private autoSave: boolean;
   private indexPath: string;
 
+  private knowledgeGraph: AdrKnowledgeGraph;
+
   constructor(options: AdrEngineOptions = {}) {
     this.cacheDir = options.cacheDir || resolve(process.cwd(), '.adr-cache');
     this.autoSave = options.autoSave ?? true;
     this.indexPath = join(this.cacheDir, 'index.json');
 
     this.vectorStore = new VectorStore();
+    this.knowledgeGraph = new AdrKnowledgeGraph();
     this.embeddingEngine = new EmbeddingEngine({
       cacheDir: this.cacheDir,
       modelName: options.modelName,
     });
 
     // Try loading persistent index
-    this.vectorStore.loadFromFile(this.indexPath);
+    if (this.vectorStore.loadFromFile(this.indexPath)) {
+      this.knowledgeGraph.buildFromDocuments(this.vectorStore.getAllDocuments());
+    }
   }
 
   public getVectorStore(): VectorStore {
@@ -48,6 +54,30 @@ export class AdrEngine {
 
   public getEmbeddingEngine(): EmbeddingEngine {
     return this.embeddingEngine;
+  }
+
+  public getKnowledgeGraph(): AdrKnowledgeGraph {
+    return this.knowledgeGraph;
+  }
+
+  public getLineage(id: string) {
+    return this.knowledgeGraph.getLineage(id);
+  }
+
+  public getImpact(id: string) {
+    return this.knowledgeGraph.getImpact(id);
+  }
+
+  public getDependencies(id: string) {
+    return this.knowledgeGraph.getDependencies(id);
+  }
+
+  public validateGraph() {
+    return this.knowledgeGraph.validate();
+  }
+
+  public getGraphMermaid(options?: { focusId?: string; radius?: number }) {
+    return this.knowledgeGraph.toMermaid(options);
   }
 
   public async indexDirectories(
@@ -105,6 +135,9 @@ export class AdrEngine {
       indexedFiles++;
       totalChunks += chunks.length;
     }
+
+    // Rebuild knowledge graph relationships from all active documents
+    this.knowledgeGraph.buildFromDocuments(this.vectorStore.getAllDocuments());
 
     if (this.autoSave) {
       this.saveIndex();
@@ -337,7 +370,9 @@ export class AdrEngine {
           entry.name === 'node_modules' ||
           entry.name === '.git' ||
           entry.name === '.adr-cache' ||
-          entry.name === 'dist'
+          entry.name === 'dist' ||
+          entry.name === 'legacy_adr' ||
+          entry.name === 'legacy'
         ) {
           continue;
         }

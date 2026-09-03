@@ -17,8 +17,93 @@ export interface AdrMetadata {
   supersededBy?: string[];
   extends?: string[];
   amends?: string[];
+  dependsOn?: string[];
+  requiredBy?: string[];
   category?: string;
   tags?: string[];
+}
+
+export type RelationType =
+  | 'OBSOLETES'
+  | 'OBSOLETED_BY'
+  | 'EXTENDS'
+  | 'EXTENDED_BY'
+  | 'AMENDS'
+  | 'AMENDED_BY'
+  | 'DEPENDS_ON'
+  | 'REQUIRED_BY'
+  | 'REFERENCES'
+  | 'REFERENCED_BY';
+
+export interface AdrNode {
+  id: string;
+  title: string;
+  status: AdrStatus;
+  date?: string;
+  category?: string;
+  filePath: string;
+  catalog: 'target' | 'legacy' | 'default';
+}
+
+export interface AdrEdge {
+  source: string;
+  target: string;
+  type: RelationType;
+  explicit: boolean;
+  description?: string;
+}
+
+export interface LineageStep {
+  fromId: string;
+  toId: string;
+  relation: RelationType;
+  date?: string;
+}
+
+export interface LineageReport {
+  targetId: string;
+  activeStandardId: string;
+  isActive: boolean;
+  ancestors: string[];
+  successors: string[];
+  timeline: LineageStep[];
+  summary: string;
+}
+
+export interface ImpactReport {
+  targetId: string;
+  targetTitle: string;
+  directDependents: Array<{ id: string; title: string; relation: RelationType }>;
+  transitiveDependents: Array<{ id: string; title: string; depth: number }>;
+  extensions: Array<{ id: string; title: string; relation: RelationType }>;
+  citations: Array<{ id: string; title: string }>;
+  blastRadiusScore: number;
+  advisory: string[];
+}
+
+export type ValidationSeverity = 'error' | 'warning';
+
+export type ValidationCode =
+  | 'DANGLING_REFERENCE'
+  | 'CYCLE_DETECTED'
+  | 'STATUS_CONTRADICTION'
+  | 'ORPHAN_RECORD';
+
+export interface ValidationIssue {
+  severity: ValidationSeverity;
+  code: ValidationCode;
+  message: string;
+  nodeIds: string[];
+  remediation: string;
+}
+
+export interface GraphValidationReport {
+  valid: boolean;
+  totalNodes: number;
+  totalEdges: number;
+  errors: ValidationIssue[];
+  warnings: ValidationIssue[];
+  summary: string;
 }
 
 export interface AdrSections {
@@ -40,6 +125,7 @@ export interface AdrDocument {
   sections: AdrSections;
   rawContent: string;
   summaryText: string;
+  inlineReferences?: string[];
 }
 
 export type SectionType = 'summary' | 'context' | 'decision' | 'options';

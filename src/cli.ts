@@ -183,6 +183,112 @@ async function main() {
       break;
     }
 
+    case 'graph': {
+      const sub = args[1];
+      const targetId = args[2];
+
+      // Auto-index if vector store or graph is empty
+      if (engine.getKnowledgeGraph().getNodeCount() === 0) {
+        const defaultDirs = discoverDefaultAdrDirs();
+        if (defaultDirs.length > 0) {
+          await engine.indexDirectories(defaultDirs);
+        }
+      }
+
+      if (sub === 'lineage') {
+        if (!targetId) {
+          process.stderr.write('Error: ADR ID required: adr-vector graph lineage <id>\n');
+          process.exit(1);
+        }
+        const report = engine.getLineage(targetId);
+        process.stdout.write(`\nLineage Report for ADR-${report.targetId}:\n`);
+        process.stdout.write(`Active Canonical Standard: ADR-${report.activeStandardId} (${report.isActive ? 'Active' : 'Superseded'})\n`);
+        process.stdout.write(`Summary: ${report.summary}\n\n`);
+        if (report.ancestors.length > 0) {
+          process.stdout.write(`Predecessors Obsoleted: ${report.ancestors.map((a) => `ADR-${a}`).join(', ')}\n`);
+        }
+        if (report.successors.length > 0) {
+          process.stdout.write(`Successor Chain: ${report.successors.map((s) => `ADR-${s}`).join(' -> ')}\n`);
+        }
+      } else if (sub === 'impact') {
+        if (!targetId) {
+          process.stderr.write('Error: ADR ID required: adr-vector graph impact <id>\n');
+          process.exit(1);
+        }
+        const impact = engine.getImpact(targetId);
+        process.stdout.write(`\nArchitectural Impact Analysis: ADR-${impact.targetId} ("${impact.targetTitle}")\n`);
+        process.stdout.write(`Blast Radius Score: ${impact.blastRadiusScore.toFixed(1)}\n\n`);
+        process.stdout.write('Advisories:\n');
+        for (const adv of impact.advisory) {
+          process.stdout.write(`  - ${adv}\n`);
+        }
+        if (impact.directDependents.length > 0) {
+          process.stdout.write('\nDirect Dependents:\n');
+          for (const d of impact.directDependents) {
+            process.stdout.write(`  * ADR-${d.id}: ${d.title} (${d.relation})\n`);
+          }
+        }
+        if (impact.extensions.length > 0) {
+          process.stdout.write('\nExtensions & Amendments:\n');
+          for (const e of impact.extensions) {
+            process.stdout.write(`  * ADR-${e.id}: ${e.title} (${e.relation})\n`);
+          }
+        }
+        if (impact.transitiveDependents.length > 0) {
+          process.stdout.write('\nTransitive Dependents:\n');
+          for (const t of impact.transitiveDependents) {
+            process.stdout.write(`  * ADR-${t.id}: ${t.title} (Depth: ${t.depth})\n`);
+          }
+        }
+        if (impact.citations.length > 0) {
+          process.stdout.write('\nCitations & Informational References:\n');
+          for (const c of impact.citations) {
+            process.stdout.write(`  * ADR-${c.id}: ${c.title}\n`);
+          }
+        }
+      } else if (sub === 'deps') {
+        if (!targetId) {
+          process.stderr.write('Error: ADR ID required: adr-vector graph deps <id>\n');
+          process.exit(1);
+        }
+        const deps = engine.getDependencies(targetId);
+        process.stdout.write(`\nUpstream Dependencies for ADR-${deps.targetId}:\n`);
+        if (deps.hasDeprecatedPrerequisite) {
+          process.stdout.write('WARNING: Depends on deprecated or superseded prerequisites!\n');
+        }
+        if (deps.dependencies.length === 0) {
+          process.stdout.write('No upstream prerequisites. Foundational decision.\n');
+        } else {
+          for (const d of deps.dependencies) {
+            process.stdout.write(`  - ADR-${d.id}: ${d.title} [Status: ${d.status}, Relation: ${d.relation}, Depth: ${d.depth}]\n`);
+          }
+        }
+      } else if (sub === 'validate') {
+        const report = engine.validateGraph();
+        process.stdout.write(`\nKnowledge Graph Validation: ${report.valid ? 'VALID' : 'INVALID'}\n`);
+        process.stdout.write(`Nodes: ${report.totalNodes}, Edges: ${report.totalEdges}, Errors: ${report.errors.length}, Warnings: ${report.warnings.length}\n\n`);
+        if (report.errors.length > 0) {
+          process.stdout.write('ERRORS:\n');
+          for (const err of report.errors) {
+            process.stdout.write(`  [${err.code}] ${err.message}\n    Remediation: ${err.remediation}\n`);
+          }
+        }
+        if (report.warnings.length > 0) {
+          process.stdout.write('\nWARNINGS:\n');
+          for (const warn of report.warnings) {
+            process.stdout.write(`  [${warn.code}] ${warn.message}\n    Remediation: ${warn.remediation}\n`);
+          }
+        }
+      } else if (sub === 'mermaid') {
+        const mermaid = engine.getGraphMermaid({ focusId: targetId });
+        process.stdout.write(`\n\`\`\`mermaid\n${mermaid}\n\`\`\`\n`);
+      } else {
+        process.stderr.write('Usage: adr-vector graph <validate|lineage|impact|deps|mermaid> [id]\n');
+        process.exit(1);
+      }
+      break;
+    }
+
     case 'help':
     default: {
       process.stdout.write(`
@@ -194,6 +300,11 @@ Usage:
   adr-vector search <query>             Semantic vector search across indexed ADRs
   adr-vector check --file <path>        Check a draft ADR file for overlap and duplicate risk
   adr-vector check -t <title> -c <ctx>  Check draft components for overlap
+  adr-vector graph validate             Validate knowledge graph (cycles, dangling links, split-brain)
+  adr-vector graph lineage <id>         Trace RFC-style obsoletion and active replacement chain
+  adr-vector graph impact <id>          Evaluate downstream blast radius and dependents
+  adr-vector graph deps <id>            Inspect upstream dependencies and prerequisites
+  adr-vector graph mermaid [id]         Export Mermaid architecture topology diagram
   adr-vector list                       List all indexed ADRs
   adr-vector get <id>                   View details of an indexed ADR
   adr-vector help                       Show this help message

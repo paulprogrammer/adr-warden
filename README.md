@@ -62,6 +62,34 @@ Scans and synchronizes target directories with the embedding cache.
   - `directories` (string[], optional): Custom directories to index
   - `force` (boolean, optional): Recompute embeddings ignoring cache
 
+### 6. `adr_graph_lineage`
+Traverses RFC-style obsoletion and replacement lineage for an ADR. Resolves active replacement standard, obsolete predecessors, and chronological supersession timeline.
+
+- **Parameters**:
+  - `id` (string): ADR identifier to trace lineage for
+
+### 7. `adr_graph_impact`
+Performs architectural impact analysis (blast radius) for an ADR. Enumerates direct downstream dependents, specializing extensions, transitive dependencies, and citations.
+
+- **Parameters**:
+  - `id` (string): ADR identifier to evaluate impact for
+
+### 8. `adr_graph_dependencies`
+Resolves upstream architectural dependencies in topological order. Flags deprecated or superseded prerequisites.
+
+- **Parameters**:
+  - `id` (string): ADR identifier to evaluate upstream prerequisites for
+
+### 9. `adr_graph_validate`
+Validates architectural graph integrity across all active records: detects dangling references, circular dependencies/obsoletion loops, split-brain status contradictions, and isolated orphan records.
+
+### 10. `adr_graph_mermaid`
+Generates a clean Mermaid diagram visualizing ADR lineage, dependencies, and extensions adhering to documentation standards.
+
+- **Parameters**:
+  - `focus_id` (string, optional): Focus ADR identifier to render localized neighborhood
+  - `radius` (number, optional): Neighborhood radius around focus ADR (default: 1)
+
 ## MCP Server Configuration
 
 To wire this server into an agent workspace (such as `.mcp.json` or `.agents/mcp_config.json`), configure the stdio command:
@@ -76,7 +104,7 @@ To wire this server into an agent workspace (such as `.mcp.json` or `.agents/mcp
         "mcp"
       ],
       "env": {
-        "ADR_DIRS": "./docs/adr,./legacy_adr",
+        "ADR_DIRS": "./docs/adr",
         "ADR_CACHE_DIR": "./.adr-cache"
       }
     }
@@ -89,20 +117,32 @@ To wire this server into an agent workspace (such as `.mcp.json` or `.agents/mcp
 The package provides a direct CLI binary for developer and CI automation:
 
 ```bash
-# Index repositories
-pnpm exec adr-vector index ./docs/adr ./docs/adr
+# Index active ADR catalog
+pnpm exec adr-vector index ./docs/adr
 
 # Search semantically
 pnpm exec adr-vector search "how do we handle secrets and runtime variables"
 
-# Check draft overlap
+# Check draft overlap before writing
 pnpm exec adr-vector check \
   --title "Runtime Configuration Architecture" \
   --context "Configuration is scattered across pipelines causing divergence." \
   --decision "Use an abstracted parameter store with Git overlays."
 
-# Inspect ADR details
-pnpm exec adr-vector get 0001
+# Validate knowledge graph integrity (cycles, broken references, status contradictions)
+pnpm exec adr-vector graph validate
+
+# Trace RFC-style obsoletion lineage to find current active standard
+pnpm exec adr-vector graph lineage 0001
+
+# Calculate downstream blast radius and dependents
+pnpm exec adr-vector graph impact 0001
+
+# Inspect upstream dependencies in topological order
+pnpm exec adr-vector graph deps 0007
+
+# Export Mermaid relationship diagram
+pnpm exec adr-vector graph mermaid 0001
 
 # List all catalog entries
 pnpm exec adr-vector list

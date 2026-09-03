@@ -27,10 +27,8 @@ export function discoverDefaultAdrDirs(configuredDirs?: string[]): string[] {
 
   const candidates = [
     './docs/adr',
-    './legacy_adr',
     './adr',
     './docs/adrs',
-    './docs/adr',
     './docs/adr',
   ];
 
@@ -347,6 +345,260 @@ export function createMcpServer(config: McpServerConfig = {}): {
     }
   );
 
+  // Tool 6: adr_graph_lineage
+  server.tool(
+    'adr_graph_lineage',
+    'Traverses RFC-style obsoletion and replacement lineage for an ADR. Resolves active successor standard, obsolete predecessors, and chronological supersession timeline.',
+    {
+      id: z.string().describe('ADR identifier to trace lineage for (e.g. "0001", "ADR-001")'),
+    },
+    async ({ id }) => {
+      try {
+        const report = engine.getLineage(id);
+
+        let output = `## Lineage Report for ADR-${report.targetId}\n\n`;
+        output += `- **Active Canonical Standard:** ADR-${report.activeStandardId}\n`;
+        output += `- **Is Target Active?:** ${report.isActive ? 'YES' : 'NO (Superseded)'}\n`;
+        output += `- **Summary:** ${report.summary}\n\n`;
+
+        if (report.ancestors.length > 0) {
+          output += `### Predecessors Obsoleted\n`;
+          for (const anc of report.ancestors) {
+            output += `- ADR-${anc}\n`;
+          }
+          output += '\n';
+        }
+
+        if (report.successors.length > 0) {
+          output += `### Successor Chain\n`;
+          for (const succ of report.successors) {
+            output += `- ADR-${succ}\n`;
+          }
+          output += '\n';
+        }
+
+        if (report.timeline.length > 0) {
+          output += `### Chronological Supersession Timeline\n`;
+          for (let i = 0; i < report.timeline.length; i++) {
+            const step = report.timeline[i];
+            output += `${i + 1}. ADR-${step.fromId} ${step.relation} ADR-${step.toId}${step.date ? ` (${step.date})` : ''}\n`;
+          }
+          output += '\n';
+        }
+
+        return {
+          content: [{ type: 'text', text: output }],
+        };
+      } catch (error) {
+        return {
+          isError: true,
+          content: [
+            {
+              type: 'text',
+              text: `Error traversing lineage for ADR "${id}": ${(error as Error).message}`,
+            },
+          ],
+        };
+      }
+    }
+  );
+
+  // Tool 7: adr_graph_impact
+  server.tool(
+    'adr_graph_impact',
+    'Performs architectural impact analysis (blast radius) for an ADR. Enumerates direct dependents, specializing extensions, transitive downstream dependents, and citations.',
+    {
+      id: z.string().describe('ADR identifier to evaluate impact for (e.g. "0001", "ADR-001")'),
+    },
+    async ({ id }) => {
+      try {
+        const impact = engine.getImpact(id);
+
+        let output = `## Architectural Impact Analysis: ADR-${impact.targetId}\n\n`;
+        output += `**Title:** ${impact.targetTitle}\n`;
+        output += `**Blast Radius Score:** ${impact.blastRadiusScore.toFixed(1)}\n\n`;
+
+        output += `### Operational Advisories\n`;
+        for (const adv of impact.advisory) {
+          output += `- ${adv}\n`;
+        }
+        output += '\n';
+
+        if (impact.directDependents.length > 0) {
+          output += `### Direct Downstream Dependents (${impact.directDependents.length})\n`;
+          for (const dep of impact.directDependents) {
+            output += `- **ADR-${dep.id}**: ${dep.title} (${dep.relation})\n`;
+          }
+          output += '\n';
+        }
+
+        if (impact.extensions.length > 0) {
+          output += `### Specializing Extensions & Amendments (${impact.extensions.length})\n`;
+          for (const ext of impact.extensions) {
+            output += `- **ADR-${ext.id}**: ${ext.title} (${ext.relation})\n`;
+          }
+          output += '\n';
+        }
+
+        if (impact.transitiveDependents.length > 0) {
+          output += `### Transitive Downstream Records (${impact.transitiveDependents.length})\n`;
+          for (const t of impact.transitiveDependents) {
+            output += `- **ADR-${t.id}**: ${t.title} (Dependency Depth: ${t.depth})\n`;
+          }
+          output += '\n';
+        }
+
+        if (impact.citations.length > 0) {
+          output += `### Citations & Informational References (${impact.citations.length})\n`;
+          for (const c of impact.citations) {
+            output += `- **ADR-${c.id}**: ${c.title}\n`;
+          }
+          output += '\n';
+        }
+
+        return {
+          content: [{ type: 'text', text: output }],
+        };
+      } catch (error) {
+        return {
+          isError: true,
+          content: [
+            {
+              type: 'text',
+              text: `Error analyzing impact for ADR "${id}": ${(error as Error).message}`,
+            },
+          ],
+        };
+      }
+    }
+  );
+
+  // Tool 8: adr_graph_dependencies
+  server.tool(
+    'adr_graph_dependencies',
+    'Resolves upstream architectural dependencies in topological order. Checks for prerequisite decisions and flags deprecated or superseded prerequisites.',
+    {
+      id: z.string().describe('ADR identifier to evaluate upstream prerequisites for'),
+    },
+    async ({ id }) => {
+      try {
+        const result = engine.getDependencies(id);
+
+        let output = `## Upstream Architectural Dependencies: ADR-${result.targetId}\n\n`;
+        if (result.hasDeprecatedPrerequisite) {
+          output += `> [!WARNING]\n> This ADR depends on one or more prerequisites that are currently marked deprecated or superseded. Review upstream decisions before implementation.\n\n`;
+        }
+
+        if (result.dependencies.length === 0) {
+          output += `No upstream prerequisite decisions recorded. This is a foundational architectural decision.\n`;
+        } else {
+          output += `### Prerequisite Evaluation Order (${result.dependencies.length} dependencies)\n\n`;
+          for (let i = 0; i < result.dependencies.length; i++) {
+            const dep = result.dependencies[i];
+            output += `${i + 1}. **ADR-${dep.id}**: ${dep.title} [Status: ${dep.status}, Relation: ${dep.relation}, Depth: ${dep.depth}]\n`;
+          }
+        }
+
+        return {
+          content: [{ type: 'text', text: output }],
+        };
+      } catch (error) {
+        return {
+          isError: true,
+          content: [
+            {
+              type: 'text',
+              text: `Error evaluating dependencies for ADR "${id}": ${(error as Error).message}`,
+            },
+          ],
+        };
+      }
+    }
+  );
+
+  // Tool 9: adr_graph_validate
+  server.tool(
+    'adr_graph_validate',
+    'Validates architectural graph integrity: detects dangling references, circular dependencies or obsoletion loops, split-brain status contradictions, and unharmonized heritage records.',
+    {},
+    async () => {
+      try {
+        const report = engine.validateGraph();
+
+        let output = `## ADR Knowledge Graph Validation Report\n\n`;
+        output += `- **Status:** ${report.valid ? 'VALID' : 'INVALID'}\n`;
+        output += `- **Nodes Evaluated:** ${report.totalNodes}\n`;
+        output += `- **Edges Evaluated:** ${report.totalEdges}\n`;
+        output += `- **Errors:** ${report.errors.length}\n`;
+        output += `- **Warnings:** ${report.warnings.length}\n`;
+        output += `- **Summary:** ${report.summary}\n\n`;
+
+        if (report.errors.length > 0) {
+          output += `### Fatal Integrity Errors (${report.errors.length})\n\n`;
+          for (let i = 0; i < report.errors.length; i++) {
+            const err = report.errors[i];
+            output += `#### ${i + 1}. [${err.code}] ${err.message}\n`;
+            output += `- **Involved ADRs:** ${err.nodeIds.map((n) => `ADR-${n}`).join(', ')}\n`;
+            output += `- **Required Remediation:** ${err.remediation}\n\n`;
+          }
+        }
+
+        if (report.warnings.length > 0) {
+          output += `### Architectural Smells & Warnings (${report.warnings.length})\n\n`;
+          for (let i = 0; i < report.warnings.length; i++) {
+            const warn = report.warnings[i];
+            output += `#### ${i + 1}. [${warn.code}] ${warn.message}\n`;
+            output += `- **Involved ADRs:** ${warn.nodeIds.map((n) => `ADR-${n}`).join(', ')}\n`;
+            output += `- **Suggested Remediation:** ${warn.remediation}\n\n`;
+          }
+        }
+
+        return {
+          content: [{ type: 'text', text: output }],
+        };
+      } catch (error) {
+        return {
+          isError: true,
+          content: [
+            {
+              type: 'text',
+              text: `Error validating ADR knowledge graph: ${(error as Error).message}`,
+            },
+          ],
+        };
+      }
+    }
+  );
+
+  // Tool 10: adr_graph_mermaid
+  server.tool(
+    'adr_graph_mermaid',
+    'Generates a clean Mermaid diagram visualizing ADR lineage, dependencies, and extensions adhering to documentation standards.',
+    {
+      focus_id: z.string().optional().describe('Focus ADR identifier to render localized neighborhood (default: all nodes)'),
+      radius: z.number().optional().describe('Neighborhood radius around focus ADR (default: 1)'),
+    },
+    async ({ focus_id, radius }) => {
+      try {
+        const mermaid = engine.getGraphMermaid({ focusId: focus_id, radius });
+        const output = `## ADR Relationship Topology\n\n\`\`\`mermaid\n${mermaid}\n\`\`\`\n`;
+        return {
+          content: [{ type: 'text', text: output }],
+        };
+      } catch (error) {
+        return {
+          isError: true,
+          content: [
+            {
+              type: 'text',
+              text: `Error rendering Mermaid graph: ${(error as Error).message}`,
+            },
+          ],
+        };
+      }
+    }
+  );
+
   // Resource 1: adr://catalog
   server.resource(
     'adr-catalog',
@@ -396,6 +648,60 @@ export function createMcpServer(config: McpServerConfig = {}): {
             uri: uri.href,
             mimeType: 'text/markdown',
             text: doc.rawContent,
+          },
+        ],
+      };
+    }
+  );
+
+  // Resource 3: adr://graph/validation
+  server.resource(
+    'adr-graph-validation',
+    'adr://graph/validation',
+    async (uri) => {
+      const report = engine.validateGraph();
+      return {
+        contents: [
+          {
+            uri: uri.href,
+            mimeType: 'application/json',
+            text: JSON.stringify(report, null, 2),
+          },
+        ],
+      };
+    }
+  );
+
+  // Resource 4: adr://graph/lineage/{id}
+  server.resource(
+    'adr-graph-lineage',
+    new ResourceTemplate('adr://graph/lineage/{id}', { list: undefined }),
+    async (uri, { id }) => {
+      const report = engine.getLineage(id as string);
+      return {
+        contents: [
+          {
+            uri: uri.href,
+            mimeType: 'application/json',
+            text: JSON.stringify(report, null, 2),
+          },
+        ],
+      };
+    }
+  );
+
+  // Resource 5: adr://graph/impact/{id}
+  server.resource(
+    'adr-graph-impact',
+    new ResourceTemplate('adr://graph/impact/{id}', { list: undefined }),
+    async (uri, { id }) => {
+      const report = engine.getImpact(id as string);
+      return {
+        contents: [
+          {
+            uri: uri.href,
+            mimeType: 'application/json',
+            text: JSON.stringify(report, null, 2),
           },
         ],
       };

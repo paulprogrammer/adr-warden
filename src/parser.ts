@@ -109,14 +109,18 @@ export function parseAdrMarkdown(
         .filter(Boolean);
     } else if (key === 'technical story' || key === 'related work items') {
       metadata.technicalStory = val;
-    } else if (key === 'supersedes') {
+    } else if (key === 'supersedes' || key === 'obsoletes') {
       metadata.supersedes = extractAdrReferences(val);
-    } else if (key === 'superseded by' || key === 'superseded-by') {
+    } else if (key === 'superseded by' || key === 'superseded-by' || key === 'obsoleted by' || key === 'obsoleted-by') {
       metadata.supersededBy = extractAdrReferences(val);
     } else if (key === 'extends') {
       metadata.extends = extractAdrReferences(val);
-    } else if (key === 'amends') {
+    } else if (key === 'amends' || key === 'updates') {
       metadata.amends = extractAdrReferences(val);
+    } else if (key === 'depends on' || key === 'depends-on' || key === 'prerequisites' || key === 'dependencies') {
+      metadata.dependsOn = extractAdrReferences(val);
+    } else if (key === 'required by' || key === 'required-by' || key === 'decision required before') {
+      metadata.requiredBy = extractAdrReferences(val);
     } else if (key === 'category') {
       metadata.category = val;
     }
@@ -178,6 +182,8 @@ export function parseAdrMarkdown(
   }
   const summaryText = summaryParts.join('\n');
 
+  const inlineReferences = extractInlineCitations(content, id);
+
   return {
     id,
     filePath,
@@ -188,7 +194,21 @@ export function parseAdrMarkdown(
     sections,
     rawContent: content,
     summaryText,
+    inlineReferences,
   };
+}
+
+export function extractInlineCitations(content: string, selfId: string): string[] {
+  const citations = new Set<string>();
+  const pattern = /(?:legacy\s+adr[-:\s]*([0-9]{1,4})|adr[-:\s]*([0-9]{3,4})|(?:docs\/adr|legacy_adr)\/(?:adr-)?([0-9]{3,4}))/gi;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(content)) !== null) {
+    const rawId = (match[1] || match[2] || match[3] || '').trim();
+    if (rawId && rawId !== selfId && !citations.has(rawId)) {
+      citations.add(rawId);
+    }
+  }
+  return Array.from(citations);
 }
 
 export function cleanProse(text: string): string {
