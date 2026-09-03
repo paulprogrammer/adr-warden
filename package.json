@@ -18,8 +18,8 @@
     "mcp": "node dist/cli.js mcp"
   },
   "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "author": "Paul Williams <paulprogrammer@gmail.com>",
+  "license": "MIT",
   "devEngines": {
     "packageManager": {
       "name": "pnpm",

@@ -155,3 +155,7 @@ Run the automated test suite with Vitest:
 ```bash
 pnpm test
 ```
+
+## License
+
+This project is licensed under the [MIT License](file:///home/paul/PROJ/adr-search-and-lifecycle/LICENSE).
