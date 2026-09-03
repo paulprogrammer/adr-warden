@@ -119,7 +119,60 @@ Claude Desktop does not support native progressive skill folders. To enforce the
 
 ---
 
-### 3. Cursor IDE
+### 3. Claude Code (CLI)
+
+Claude Code (`claude`) supports Model Context Protocol servers at both project scope (stored in `.mcp.json`) and global user scope.
+
+#### Option A: CLI Command Registration
+Run from the root of your target architecture repository:
+
+```bash
+# Register at project scope (.mcp.json)
+claude mcp add -s project adr-search \
+  -e ADR_DIRS="./docs/adr" \
+  -e ADR_CACHE_DIR="./.adr-cache" \
+  -- node /path/to/adr-search-and-lifecycle/dist/cli.js mcp
+```
+
+#### Option B: Declarative Configuration via `.mcp.json`
+Create or update `.mcp.json` in the root of the target architecture repository:
+
+```json
+{
+  "mcpServers": {
+    "adr-search": {
+      "command": "node",
+      "args": [
+        "/path/to/adr-search-and-lifecycle/dist/cli.js",
+        "mcp"
+      ],
+      "env": {
+        "ADR_DIRS": "./docs/adr",
+        "ADR_CACHE_DIR": "./.adr-cache"
+      }
+    }
+  }
+}
+```
+
+#### Rule Enforcement: `CLAUDE.md`
+Claude Code automatically reads `CLAUDE.md` at project startup. Add the following directives to enforce the pre-flight overlap guard and graph validation lifecycle:
+
+```markdown
+## Architectural Decision Records (ADRs)
+
+When evaluating or drafting architecture records under docs/adr/:
+1. Pre-Authoring Guard: Always call check_adr_overlap with draft title, context, and decision before creating files.
+   - If DUPLICATE_RISK or CONFLICT_RISK: Halt file creation. Propose updating or enriching existing records via get_adr.
+   - If EXTENSION_CANDIDATE: Add extends: [<targetId>] to frontmatter and link to base standard.
+   - If NOVEL: Proceed with standard MADR authoring.
+2. Lineage Traversal: Use adr_graph_lineage to ensure target records are active standards. Never extend superseded records.
+3. Pre-Commit Verification: Run adr_graph_validate before completing tasks. Zero fatal errors (CYCLE_DETECTED, DANGLING_REFERENCE, STATUS_CONTRADICTION) are permitted.
+```
+
+---
+
+### 4. Cursor IDE
 
 Cursor supports MCP servers configured at the workspace level or user settings level.
 
@@ -158,7 +211,7 @@ When working with files in docs/adr/ or designing architecture:
 
 ---
 
-### 4. VS Code (Cline, Roo Code, Continue)
+### 5. VS Code (Cline, Roo Code, Continue)
 
 For VS Code extensions implementing the Model Context Protocol (such as Cline or Roo Code), configure the server under the extension's MCP configuration settings.
 
@@ -196,7 +249,7 @@ For VS Code extensions implementing the Model Context Protocol (such as Cline or
 
 ---
 
-### 5. Windsurf (Codeium)
+### 6. Windsurf (Codeium)
 
 Windsurf supports MCP servers via its central configuration file (`~/.codeium/windsurf/mcp_config.json`).
 
