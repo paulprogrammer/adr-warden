@@ -36,13 +36,7 @@
   },
   "author": "Paul Williams <paulprogrammer@gmail.com>",
   "license": "MIT",
-  "devEngines": {
-    "packageManager": {
-      "name": "pnpm",
-      "version": "^11.10.0",
-      "onFail": "download"
-    }
-  },
+  "packageManager": "pnpm@11.10.0",
   "type": "module",
   "dependencies": {
     "@huggingface/transformers": "^4.2.0",

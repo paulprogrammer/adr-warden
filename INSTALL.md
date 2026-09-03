@@ -39,7 +39,13 @@ pnpm test
 To make the `warden` and `adr-warden` commands accessible globally on your system path:
 
 ```bash
-pnpm link --global
+# Standard global symlink:
+npm link
+
+# Or link directly into user binaries:
+mkdir -p ~/.local/bin
+ln -sf "$(pwd)/dist/cli.js" ~/.local/bin/warden
+ln -sf "$(pwd)/dist/cli.js" ~/.local/bin/adr-warden
 ```
 
 ### Option 2: Install Directly from GitHub via Global Package Manager
