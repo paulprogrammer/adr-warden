@@ -6,21 +6,48 @@ Autonomous agents operating inside architecture repositories require two synchro
 1. A runtime protocol transport (MCP) providing deterministic semantic search, overlap scoring, and graph traversal tools.
 2. Behavioral instruction runbooks (Skills) that force the agent harness to invoke pre-flight checks before modifying files and to validate graph topologies before submitting changes.
 
-This guide provides step-by-step instructions for acquiring ADR Warden from Git, building the CLI, and configuring the MCP server and skills across standard harness clients.
+This guide provides step-by-step instructions for acquiring ADR Warden from npm or Git, building the CLI, and configuring the MCP server and skills across standard harness clients.
 
 ---
 
-## Repository and Prerequisites
+## Prerequisites
 
+- **Package**: [`adr-warden` on npmjs.com](https://www.npmjs.com/package/adr-warden)
 - **GitHub Repository**: [https://github.com/paulprogrammer/adr-warden](https://github.com/paulprogrammer/adr-warden)
 - **Runtime**: Node.js (version 20 or higher)
-- **Package Manager**: `pnpm` (version 9 or higher)
+- **Package Manager**: `npm` or `pnpm` (version 9 or higher)
 
 ---
 
 ## Installation Options
 
-### Option 1: Clone and Build Locally (Recommended)
+### Option 1: Install from npm (Recommended)
+
+Install globally from [npmjs.com/package/adr-warden](https://www.npmjs.com/package/adr-warden):
+
+```bash
+# Using npm
+npm install -g adr-warden
+
+# Or using pnpm
+pnpm add -g adr-warden
+```
+
+Once installed globally, `warden` and `adr-warden` are directly available in your terminal and MCP client configurations.
+
+### Option 2: Run Directly via `npx` (No Install Required)
+
+You can run commands or boot the MCP server on-demand without installing:
+
+```bash
+# Run MCP server
+npx -y adr-warden mcp
+
+# Run CLI commands
+npx adr-warden search "authentication pattern"
+```
+
+### Option 3: Clone and Build Locally
 
 Clone the repository and build the TypeScript binaries:
 
@@ -48,17 +75,15 @@ ln -sf "$(pwd)/dist/cli.js" ~/.local/bin/warden
 ln -sf "$(pwd)/dist/cli.js" ~/.local/bin/adr-warden
 ```
 
-### Option 2: Install Directly from GitHub via Global Package Manager
+### Option 4: Install Directly from GitHub
 
-You can install ADR Warden globally directly from the Git repository:
+You can also install ADR Warden globally directly from the Git repository:
 
 ```bash
 pnpm add -g github:paulprogrammer/adr-warden
 # or using npm:
 # npm install -g github:paulprogrammer/adr-warden
 ```
-
-Once installed globally, `warden` is directly available in your terminal and MCP client configurations.
 
 ---
 
@@ -100,10 +125,20 @@ Add the `adr-warden` server to your repository's `.agents/mcp_config.json`:
 }
 ```
 
-*Note: If `warden` is not linked globally on your system `$PATH`, specify the compiled entry point directly:*
+*Note: Alternatively, use `npx` directly without global installation:*
 ```json
-"command": "node",
-"args": ["/path/to/adr-warden/dist/cli.js", "mcp"]
+{
+  "mcpServers": {
+    "adr-warden": {
+      "command": "npx",
+      "args": ["-y", "adr-warden", "mcp"],
+      "env": {
+        "ADR_DIRS": "./docs/adr",
+        "ADR_CACHE_DIR": "./.adr-cache"
+      }
+    }
+  }
+}
 ```
 
 #### Skill Installation

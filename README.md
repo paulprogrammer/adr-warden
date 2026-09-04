@@ -1,6 +1,47 @@
 # ADR Warden
 
+[![npm version](https://img.shields.io/npm/v/adr-warden.svg)](https://www.npmjs.com/package/adr-warden)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 A lightweight, fully local vector embedding engine, decision lineage knowledge graph, and Model Context Protocol (MCP) server for Architecture Decision Records (ADRs). Designed to prevent duplicate architectural decisions, detect conflicting directions, and validate relational dependencies across architecture repositories.
+
+## Installation
+
+Install directly from npm: [npmjs.com/package/adr-warden](https://www.npmjs.com/package/adr-warden)
+
+### Global Installation (CLI & MCP Server)
+
+Install globally to make the `warden` and `adr-warden` commands accessible system-wide in your terminal and agent harnesses:
+
+```bash
+npm install -g adr-warden
+# or
+pnpm add -g adr-warden
+```
+
+### Instant Execution with `npx` (Zero Install)
+
+Run any command or spin up the MCP server on-demand without prior installation:
+
+```bash
+# Launch the MCP server over stdio
+npx -y adr-warden mcp
+
+# Run CLI commands
+npx adr-warden search "authentication pattern"
+```
+
+### Project Dependency
+
+To pin ADR Warden within a specific project or CI workflow:
+
+```bash
+npm install --save-dev adr-warden
+# or
+pnpm add -D adr-warden
+```
+
+---
 
 ## Problem Statement
 
@@ -10,7 +51,7 @@ This engine solves that failure mode at the agent authoring loop. By exposing de
 
 ## Architectural Design
 
-The engine runs entirely in Node.js using `pnpm` without external API key dependencies or cloud vector database overhead:
+The engine runs entirely in Node.js without external API key dependencies or cloud vector database overhead:
 
 - **Local Vector Extraction**: Uses `@huggingface/transformers` executing an optimized ONNX pipeline (`Xenova/all-MiniLM-L6-v2`) generating 384-dimensional dense vectors.
 - **Deterministic Multi-Vector Decomposition**: ADRs are decomposed into distinct semantic chunks (document summary, problem context, decision outcome, and evaluated options) rather than monolithic document blobs.
@@ -92,7 +133,26 @@ Generates a clean Mermaid diagram visualizing ADR lineage, dependencies, and ext
 
 ## MCP Server Configuration
 
-To wire this server into an agent workspace (such as `.mcp.json` or `.agents/mcp_config.json`), configure the stdio command:
+To wire ADR Warden into an agent workspace (such as `.mcp.json`, Claude Desktop, or `.agents/mcp_config.json`):
+
+### Option A: Using `npx` (No Global Install Required)
+
+```json
+{
+  "mcpServers": {
+    "adr-warden": {
+      "command": "npx",
+      "args": ["-y", "adr-warden", "mcp"],
+      "env": {
+        "ADR_DIRS": "./docs/adr",
+        "ADR_CACHE_DIR": "./.adr-cache"
+      }
+    }
+  }
+}
+```
+
+### Option B: Using Global Binary (`warden` or `adr-warden`)
 
 ```json
 {
@@ -111,38 +171,38 @@ To wire this server into an agent workspace (such as `.mcp.json` or `.agents/mcp
 
 ## CLI Usage
 
-The package provides direct CLI binaries (`warden` and `adr-warden`) for developer and CI automation:
+The package provides direct CLI binaries (`warden` and `adr-warden`) for developer workflows and CI automation:
 
 ```bash
 # Index active ADR catalog
-pnpm exec warden index ./docs/adr
+warden index ./docs/adr
 
 # Search semantically
-pnpm exec warden search "how do we handle secrets and runtime variables"
+warden search "how do we handle secrets and runtime variables"
 
 # Check draft overlap before writing
-pnpm exec warden check \
+warden check \
   --title "Runtime Configuration Architecture" \
   --context "Configuration is scattered across pipelines causing divergence." \
   --decision "Use an abstracted parameter store with Git overlays."
 
 # Validate knowledge graph integrity (cycles, broken references, status contradictions)
-pnpm exec warden graph validate
+warden graph validate
 
 # Trace supersession lineage to find current active standard
-pnpm exec warden graph lineage 0001
+warden graph lineage 0001
 
 # Calculate downstream blast radius and dependents
-pnpm exec warden graph impact 0001
+warden graph impact 0001
 
 # Inspect upstream dependencies in topological order
-pnpm exec warden graph deps 0007
+warden graph deps 0007
 
 # Export Mermaid relationship diagram
-pnpm exec warden graph mermaid 0001
+warden graph mermaid 0001
 
 # List all catalog entries
-pnpm exec warden list
+warden list
 ```
 
 ## Verification & Test Suite
