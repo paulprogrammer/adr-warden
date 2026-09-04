@@ -4,6 +4,12 @@
   "description": "Deterministic vector overlap guard and decision lineage knowledge graph for Architecture Decision Records",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
   "bin": {
     "warden": "./dist/cli.js",
     "adr-warden": "./dist/cli.js"
@@ -12,9 +18,17 @@
     "dist",
     "skills"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
-    "build": "tsc && chmod +x dist/cli.js",
+    "clean": "rimraf dist",
+    "build": "rimraf dist && tsc && chmod +x dist/cli.js",
     "test": "vitest run",
+    "prepublishOnly": "pnpm build && pnpm test",
     "start": "node dist/cli.js",
     "mcp": "node dist/cli.js mcp"
   },
