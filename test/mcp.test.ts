@@ -58,6 +58,7 @@ describe('MCP Server Integration via InMemoryTransport', () => {
     expect(names).toContain('adr_graph_dependencies');
     expect(names).toContain('adr_graph_validate');
     expect(names).toContain('adr_graph_mermaid');
+    expect(names).toContain('list_adr_vocabulary');
   });
 
   it('calls search_adrs tool', async () => {
@@ -189,5 +190,32 @@ describe('MCP Server Integration via InMemoryTransport', () => {
     expect(data.totalNodes).toBeGreaterThan(0);
     expect(Array.isArray(data.errors)).toBe(true);
     expect(Array.isArray(data.warnings)).toBe(true);
+  });
+
+  it('calls list_adr_vocabulary tool', async () => {
+    const result = await client.callTool({
+      name: 'list_adr_vocabulary',
+      arguments: {
+        min_docs: 1,
+        limit: 10,
+      },
+    });
+
+    expect(result.content).toBeDefined();
+    const text = (result.content as Array<{ type: string; text: string }>)[0].text;
+    expect(text).toContain('In-Situ Architectural Vocabulary');
+  });
+
+  it('reads adr://vocabulary resource', async () => {
+    const resource = await client.readResource({
+      uri: 'adr://vocabulary',
+    });
+
+    expect(resource.contents).toBeDefined();
+    const data = JSON.parse(resource.contents[0].text as string);
+    expect(Array.isArray(data)).toBe(true);
+    expect(data.length).toBeGreaterThan(0);
+    expect(data[0]).toHaveProperty('term');
+    expect(data[0]).toHaveProperty('docCount');
   });
 });

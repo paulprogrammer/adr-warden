@@ -126,9 +126,11 @@ export interface AdrDocument {
   rawContent: string;
   summaryText: string;
   inlineReferences?: string[];
+  entities?: string[];
 }
 
 export type SectionType = 'summary' | 'context' | 'decision' | 'options';
+export type SearchMode = 'hybrid' | 'dense' | 'sparse';
 
 export interface VectorChunk {
   chunkId: string;
@@ -147,6 +149,9 @@ export interface SearchResult {
   matchedSection: SectionType;
   excerpt: string;
   metadata: AdrMetadata;
+  denseScore?: number;
+  sparseScore?: number;
+  matchedTerms?: string[];
 }
 
 export type OverlapVerdict =
@@ -167,6 +172,8 @@ export interface OverlapMatch {
   verdict: OverlapVerdict;
   matchedExcerpt: string;
   recommendation: string;
+  sharedEntities?: string[];
+  matchedTerms?: string[];
 }
 
 export interface OverlapAnalysis {

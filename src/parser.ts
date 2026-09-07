@@ -183,6 +183,7 @@ export function parseAdrMarkdown(
   const summaryText = summaryParts.join('\n');
 
   const inlineReferences = extractInlineCitations(content, id);
+  const entities = extractTechnicalEntities(content);
 
   return {
     id,
@@ -195,7 +196,45 @@ export function parseAdrMarkdown(
     rawContent: content,
     summaryText,
     inlineReferences,
+    entities,
   };
+}
+
+export function extractTechnicalEntities(content: string): string[] {
+  const entities = new Set<string>();
+
+  // 1. Backticked code tokens (e.g. `gRPC`, `OpenTelemetry`, `sha256`)
+  const backtickRegex = /`([^`\n\r]+)`/g;
+  let match: RegExpExecArray | null;
+  while ((match = backtickRegex.exec(content)) !== null) {
+    const candidate = match[1].trim();
+    if (candidate.length >= 2 && candidate.length <= 40 && !candidate.includes(' ')) {
+      entities.add(candidate.toLowerCase());
+    }
+  }
+
+  // 2. Acronyms & technical abbreviations in all-caps (e.g. GKE, RBAC, OIDC, CAF, REST, SQL, IAM, CI/CD, JSON, JWT, API)
+  const acronymRegex = /\b[A-Z][A-Z0-9_-]{1,10}\b/g;
+  while ((match = acronymRegex.exec(content)) !== null) {
+    const candidate = match[0].trim();
+    if (candidate.length >= 2 && !['THE', 'AND', 'FOR', 'NOT', 'ALL', 'ANY', 'BUT', 'CAN', 'NEW', 'ADR'].includes(candidate)) {
+      entities.add(candidate.toLowerCase());
+    }
+  }
+
+  // 3. Known architectural technologies and platforms
+  const knownTechRegex = /\b(kubernetes|k8s|consul|vault|postgres|postgresql|mysql|redis|kafka|rabbitmq|istio|envoy|helm|docker|podman|terraform|argocd|argo|prometheus|grafana|opentelemetry|otel|grpc|graphql|azure|aws|gcp|google\s+cloud|azure\s+devops)\b/gi;
+  while ((match = knownTechRegex.exec(content)) !== null) {
+    entities.add(match[0].trim().toLowerCase().replace(/\s+/g, '-'));
+  }
+
+  // 4. ADR identifiers (e.g. ADR-0001, ADR-002)
+  const adrRefRegex = /ADR[-:\s]*([0-9]{1,4})/gi;
+  while ((match = adrRefRegex.exec(content)) !== null) {
+    entities.add(`adr-${match[1].padStart(4, '0')}`);
+  }
+
+  return Array.from(entities);
 }
 
 export function extractInlineCitations(content: string, selfId: string): string[] {

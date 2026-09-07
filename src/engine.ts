@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { EmbeddingEngine, cosineSimilarity } from './embedding.js';
-import { calculateContentHash, createChunks, parseAdrMarkdown } from './parser.js';
+import { calculateContentHash, createChunks, extractTechnicalEntities, parseAdrMarkdown } from './parser.js';
 import type {
   AdrDocument,
   DraftAdrInput,
@@ -9,11 +9,13 @@ import type {
   OverlapAnalysis,
   OverlapMatch,
   OverlapVerdict,
+  SearchMode,
   SearchResult,
   SectionType,
 } from './types.js';
 import { VectorStore } from './vector-store.js';
 import { AdrKnowledgeGraph } from './graph.js';
+import { VocabularyHarvester, type VocabularyTerm } from './vocabulary.js';
 
 export interface AdrEngineOptions {
   cacheDir?: string;
@@ -29,6 +31,7 @@ export class AdrEngine {
   private indexPath: string;
 
   private knowledgeGraph: AdrKnowledgeGraph;
+  private vocabularyHarvester: VocabularyHarvester;
 
   constructor(options: AdrEngineOptions = {}) {
     this.cacheDir = options.cacheDir || resolve(process.cwd(), '.adr-cache');
@@ -37,6 +40,7 @@ export class AdrEngine {
 
     this.vectorStore = new VectorStore();
     this.knowledgeGraph = new AdrKnowledgeGraph();
+    this.vocabularyHarvester = new VocabularyHarvester();
     this.embeddingEngine = new EmbeddingEngine({
       cacheDir: this.cacheDir,
       modelName: options.modelName,
@@ -45,6 +49,8 @@ export class AdrEngine {
     // Try loading persistent index
     if (this.vectorStore.loadFromFile(this.indexPath)) {
       this.knowledgeGraph.buildFromDocuments(this.vectorStore.getAllDocuments());
+      this.vocabularyHarvester.buildFromDocuments(this.vectorStore.getAllDocuments());
+      this.vectorStore.setVocabularyHarvester(this.vocabularyHarvester);
     }
   }
 
@@ -58,6 +64,14 @@ export class AdrEngine {
 
   public getKnowledgeGraph(): AdrKnowledgeGraph {
     return this.knowledgeGraph;
+  }
+
+  public getVocabularyHarvester(): VocabularyHarvester {
+    return this.vocabularyHarvester;
+  }
+
+  public getVocabulary(): VocabularyTerm[] {
+    return this.vocabularyHarvester.getAllTerms();
   }
 
   public getLineage(id: string) {
@@ -139,6 +153,10 @@ export class AdrEngine {
     // Rebuild knowledge graph relationships from all active documents
     this.knowledgeGraph.buildFromDocuments(this.vectorStore.getAllDocuments());
 
+    // Harvest in-situ vocabulary across repository and synchronize BM25 bonded phrases
+    this.vocabularyHarvester.buildFromDocuments(this.vectorStore.getAllDocuments());
+    this.vectorStore.setVocabularyHarvester(this.vocabularyHarvester);
+
     if (this.autoSave) {
       this.saveIndex();
     }
@@ -165,10 +183,17 @@ export class AdrEngine {
       threshold?: number;
       sectionType?: SectionType;
       statusFilter?: string[];
+      mode?: SearchMode;
+      bm25Weight?: number;
     } = {}
   ): Promise<SearchResult[]> {
-    const queryVector = await this.embeddingEngine.embed(query);
-    return this.vectorStore.search(queryVector, options);
+    const mode = options.mode || 'hybrid';
+    const queryVector = mode === 'sparse' ? [] : await this.embeddingEngine.embed(query);
+    return this.vectorStore.search(queryVector, {
+      ...options,
+      mode,
+      queryText: query,
+    });
   }
 
   public async checkOverlap(
@@ -177,6 +202,10 @@ export class AdrEngine {
   ): Promise<OverlapAnalysis> {
     const threshold = options.threshold ?? 0.5;
     const topK = options.topK ?? 5;
+
+    // Extract draft technical entities for precise architectural matching
+    const draftFullText = `${draft.title} ${draft.context} ${draft.decision} ${draft.options || ''} ${draft.drivers || ''}`;
+    const draftEntities = extractTechnicalEntities(draftFullText);
 
     // Synthesize draft representation
     const draftSummaryText = `ADR: ${draft.title}\nContext: ${draft.context}\nDecision: ${draft.decision}`;
@@ -192,6 +221,7 @@ export class AdrEngine {
       : draftSummaryVector;
 
     const allDocs = this.vectorStore.getAllDocuments();
+    const bm25Index = this.vectorStore.getBm25Index();
     const matches: OverlapMatch[] = [];
 
     for (const doc of allDocs) {
@@ -236,13 +266,21 @@ export class AdrEngine {
         decisionSim = cosineSimilarity(draftDecisionVector, summaryChunk.embedding);
       }
 
+      // 4. Entity and Keyword Attribution
+      const docEntities = doc.entities || extractTechnicalEntities(doc.rawContent);
+      const sharedEntities = draftEntities.filter((e) => docEntities.includes(e));
+      const hasSharedEntity = sharedEntities.length > 0;
+
+      const attribution = bm25Index.attributeTerms(doc.id, draftFullText);
+      const matchedTerms = attribution.slice(0, 6).map((a) => a.term);
+
       // Determine verdict for this particular ADR
       let matchVerdict: OverlapVerdict = 'NOVEL';
       let recommendation = '';
 
-      const isHighTitle = titleSim >= 0.78;
-      const isHighOverall = overallSim >= 0.75;
-      const isHighContext = contextSim >= 0.60;
+      const isHighTitle = titleSim >= 0.78 || (titleSim >= 0.72 && hasSharedEntity);
+      const isHighOverall = overallSim >= 0.75 || (overallSim >= 0.70 && sharedEntities.length >= 2);
+      const isHighContext = contextSim >= 0.60 || (contextSim >= 0.55 && hasSharedEntity);
       const isHighDecision = decisionSim >= 0.55;
       const isDivergentDecision = decisionSim < 0.52;
 
@@ -253,10 +291,12 @@ export class AdrEngine {
 
       if (isDuplicate) {
         matchVerdict = 'DUPLICATE_RISK';
-        recommendation = `ADR-${doc.id} ('${doc.metadata.title}') directly matches this proposal (${Math.round(titleSim * 100)}% title match, ${Math.round(overallSim * 100)}% overall similarity). Do not create a duplicate ADR; enrich or amend ADR-${doc.id} instead.`;
+        const entityText = sharedEntities.length > 0 ? ` (Shared entities: ${sharedEntities.join(', ')})` : '';
+        recommendation = `ADR-${doc.id} ('${doc.metadata.title}') directly matches this proposal (${Math.round(titleSim * 100)}% title match, ${Math.round(overallSim * 100)}% overall similarity)${entityText}. Do not create a duplicate ADR; enrich or amend ADR-${doc.id} instead.`;
       } else if (isHighContext && isDivergentDecision) {
         matchVerdict = 'CONFLICT_RISK';
-        recommendation = `ADR-${doc.id} ('${doc.metadata.title}') addresses the same problem domain (${Math.round(contextSim * 100)}% context match) but chooses a different architectural direction (${Math.round(decisionSim * 100)}% decision similarity). If superseding this decision, explicitly add 'supersedes: ADR-${doc.id}' and document the deprecation rationale.`;
+        const entityText = sharedEntities.length > 0 ? ` (Shared technical focus: ${sharedEntities.join(', ')})` : '';
+        recommendation = `ADR-${doc.id} ('${doc.metadata.title}') addresses the same problem domain (${Math.round(contextSim * 100)}% context match) but chooses a different architectural direction (${Math.round(decisionSim * 100)}% decision similarity)${entityText}. If superseding this decision, explicitly add 'supersedes: ADR-${doc.id}' and document the deprecation rationale.`;
       } else if (overallSim >= 0.52 || isHighContext || isHighDecision || isHighTitle) {
         matchVerdict = 'EXTENSION_CANDIDATE';
         recommendation = `ADR-${doc.id} ('${doc.metadata.title}') provides related architectural baseline (${Math.round(overallSim * 100)}% overall similarity). Reference or extend ADR-${doc.id} using 'extends: ADR-${doc.id}'.`;
@@ -278,6 +318,8 @@ export class AdrEngine {
           verdict: matchVerdict,
           matchedExcerpt: doc.summaryText.slice(0, 240) + '...',
           recommendation,
+          sharedEntities: sharedEntities.length > 0 ? sharedEntities : undefined,
+          matchedTerms: matchedTerms.length > 0 ? matchedTerms : undefined,
         });
       }
     }
@@ -286,7 +328,7 @@ export class AdrEngine {
     matches.sort((a, b) => b.overallSimilarity - a.overallSimilarity);
     const topMatches = matches.slice(0, topK);
 
-    // Compute holistic analysis verdict
+    // Compute aggregate analysis verdict
     let verdict: OverlapVerdict = 'NOVEL';
     let summary = 'No significant ADR overlap detected. Proposed architecture appears novel.';
     const actionableGuidance: string[] = [];
@@ -320,6 +362,12 @@ export class AdrEngine {
       summary = 'Proposal represents a distinct, net-new decision without conflicting or redundant prior art.';
       actionableGuidance.push('Proceed with creating the new ADR using the standard MADR template.');
       actionableGuidance.push('Ensure primary source citations and Mermaid diagrams are included.');
+    }
+
+    // Surface shared technical entities if any top candidate shares them
+    const allSharedEntities = Array.from(new Set(topMatches.flatMap((m) => m.sharedEntities || [])));
+    if (allSharedEntities.length > 0 && verdict !== 'NOVEL') {
+      actionableGuidance.push(`Shared technical identifiers detected: ${allSharedEntities.join(', ')}.`);
     }
 
     const confidence = topMatches.length > 0 ? topMatches[0].overallSimilarity : 0.0;

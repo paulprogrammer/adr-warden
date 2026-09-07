@@ -124,5 +124,73 @@ describe('VectorStore and Similarity Calculations', () => {
     expect(loaded).toBe(true);
     expect(reloadedStore.getDocumentCount()).toBe(1);
     expect(reloadedStore.getDocument('0005')?.metadata.title).toBe('Shift Left QA');
+    expect(reloadedStore.getBm25Index().getChunkCount()).toBe(1);
+
+    // BM25 search on reloaded store
+    const sparseResults = reloadedStore.search([], {
+      mode: 'sparse',
+      queryText: 'Shift Left QA',
+    });
+    expect(sparseResults.length).toBe(1);
+    expect(sparseResults[0].id).toBe('0005');
+  });
+
+  it('performs hybrid search combining dense similarity and sparse BM25 with RRF', () => {
+    const store = new VectorStore();
+
+    const docA: AdrDocument = {
+      id: '0010',
+      filePath: '/mock/0010.md',
+      relativePath: '0010.md',
+      contentHash: 'hash10',
+      mtime: 1000,
+      metadata: { id: '0010', title: 'PostgreSQL Migration', status: 'accepted' },
+      sections: { context: 'Database migration', decision: 'Expand and contract pattern' },
+      rawContent: '...',
+      summaryText: 'PostgreSQL database migration expand contract',
+    };
+    const docB: AdrDocument = {
+      id: '0020',
+      filePath: '/mock/0020.md',
+      relativePath: '0020.md',
+      contentHash: 'hash20',
+      mtime: 1000,
+      metadata: { id: '0020', title: 'Workload Health Probes', status: 'accepted' },
+      sections: { context: 'Health checks', decision: 'Use healthz probe endpoints' },
+      rawContent: '...',
+      summaryText: 'Container health probes healthz',
+    };
+
+    store.addDocument(docA, [
+      {
+        chunkId: '0010#summary',
+        docId: '0010',
+        sectionType: 'summary',
+        text: 'PostgreSQL database migration expand and contract pattern',
+        embedding: [0.8, 0.2, 0.0],
+      },
+    ]);
+    store.addDocument(docB, [
+      {
+        chunkId: '0020#summary',
+        docId: '0020',
+        sectionType: 'summary',
+        text: 'Container health probes and healthz liveness contract',
+        embedding: [0.1, 0.9, 0.0],
+      },
+    ]);
+
+    // Hybrid search with both vector and queryText
+    const hybridResults = store.search([0.75, 0.25, 0.0], {
+      queryText: 'PostgreSQL migration',
+      mode: 'hybrid',
+      topK: 1,
+    });
+
+    expect(hybridResults.length).toBe(1);
+    expect(hybridResults[0].id).toBe('0010');
+    expect(hybridResults[0].matchedTerms).toContain('postgresql');
+    expect(hybridResults[0].denseScore).toBeGreaterThan(0.9);
+    expect(hybridResults[0].sparseScore).toBeGreaterThan(0);
   });
 });

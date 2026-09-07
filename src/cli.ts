@@ -40,9 +40,19 @@ async function main() {
     }
 
     case 'search': {
-      const query = args.slice(1).join(' ').trim();
+      const { values, positionals } = parseArgs({
+        args: args.slice(1),
+        options: {
+          mode: { type: 'string', short: 'm' },
+          'top-k': { type: 'string', short: 'k' },
+          threshold: { type: 'string', short: 't' },
+        },
+        allowPositionals: true,
+      });
+
+      const query = positionals.join(' ').trim();
       if (!query) {
-        process.stderr.write('Error: Search query required: warden search "query"\n');
+        process.stderr.write('Error: Search query required: warden search "query" [--mode hybrid|dense|sparse]\n');
         process.exit(1);
       }
 
@@ -55,18 +65,30 @@ async function main() {
         }
       }
 
-      const results = await engine.search(query, { topK: 5 });
+      const mode = (values.mode as 'hybrid' | 'dense' | 'sparse') || 'hybrid';
+      const topK = values['top-k'] ? parseInt(values['top-k'], 10) : 5;
+      const threshold = values.threshold ? parseFloat(values.threshold) : undefined;
+
+      const results = await engine.search(query, { topK, threshold, mode });
       if (results.length === 0) {
         process.stdout.write(`No ADRs matched "${query}".\n`);
         return;
       }
 
-      process.stdout.write(`\nTop matches for "${query}":\n\n`);
+      process.stdout.write(`\nTop matches for "${query}" (mode: ${mode}):\n\n`);
       for (let i = 0; i < results.length; i++) {
         const r = results[i];
         process.stdout.write(
           `${i + 1}. [ADR-${r.id}] ${r.title} (Match: ${(r.score * 100).toFixed(1)}%, Status: ${r.status})\n`
         );
+        if (r.denseScore !== undefined || r.sparseScore !== undefined) {
+          const denseStr = r.denseScore !== undefined ? `${(r.denseScore * 100).toFixed(1)}%` : 'N/A';
+          const sparseStr = r.sparseScore !== undefined ? r.sparseScore.toFixed(2) : 'N/A';
+          process.stdout.write(`   Attribution: Dense ${denseStr}, BM25 ${sparseStr}\n`);
+        }
+        if (r.matchedTerms && r.matchedTerms.length > 0) {
+          process.stdout.write(`   Matched Keywords: ${r.matchedTerms.join(', ')}\n`);
+        }
         process.stdout.write(`   File: ${r.filePath}\n`);
         process.stdout.write(`   Section: ${r.matchedSection}\n`);
         process.stdout.write(`   Snippet: ${r.excerpt.slice(0, 160).replace(/\n/g, ' ')}...\n\n`);
@@ -140,6 +162,12 @@ async function main() {
           process.stdout.write(
             `  * ADR-${m.adrId}: ${m.title} [${m.verdict}] (Overall: ${Math.round(m.overallSimilarity * 100)}%, Context: ${Math.round(m.contextSimilarity * 100)}%, Decision: ${Math.round(m.decisionSimilarity * 100)}%)\n`
           );
+          if (m.sharedEntities && m.sharedEntities.length > 0) {
+            process.stdout.write(`    Shared Entities: ${m.sharedEntities.join(', ')}\n`);
+          }
+          if (m.matchedTerms && m.matchedTerms.length > 0) {
+            process.stdout.write(`    Key Terms: ${m.matchedTerms.join(', ')}\n`);
+          }
           process.stdout.write(`    Path: ${m.filePath}\n`);
           process.stdout.write(`    Advice: ${m.recommendation}\n`);
         }
@@ -289,6 +317,25 @@ async function main() {
       break;
     }
 
+    case 'vocab':
+    case 'vocabulary': {
+      // Auto-index if vector store is empty
+      if (engine.getVectorStore().getDocumentCount() === 0) {
+        const defaultDirs = discoverDefaultAdrDirs();
+        if (defaultDirs.length > 0) {
+          process.stdout.write(`Index empty. Auto-indexing ${defaultDirs.join(', ')}...\n`);
+          await engine.indexDirectories(defaultDirs);
+        }
+      }
+
+      const terms = engine.getVocabulary();
+      process.stdout.write(`\nHarvested In-Situ Architectural Vocabulary (${terms.length} terms):\n\n`);
+      for (const t of terms.slice(0, 50)) {
+        process.stdout.write(`- ${t.displayName} [\`${t.term}\`] (${t.docCount} docs, ${t.totalOccurrences} occurrences, sources: ${t.sources.join(', ')})\n`);
+      }
+      break;
+    }
+
     case 'help':
     default: {
       process.stdout.write(`
@@ -301,6 +348,7 @@ Usage:
   warden search <query>             Semantic vector search across indexed ADRs
   warden check --file <path>        Check a draft ADR file for overlap and duplicate risk
   warden check -t <title> -c <ctx>  Check draft components for overlap
+  warden vocabulary                 List canonical technical terms harvested in-situ from ADRs
   warden graph validate             Validate knowledge graph (cycles, dangling links, split-brain)
   warden graph lineage <id>         Trace supersession lineage and active replacement chain
   warden graph impact <id>          Evaluate downstream blast radius and dependents

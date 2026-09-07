@@ -56,7 +56,7 @@ export function createMcpServer(config: McpServerConfig = {}): {
 
   const server = new McpServer({
     name: 'adr-warden',
-    version: '1.0.1',
+    version: '1.0.3',
   });
 
   const adrDirs = discoverDefaultAdrDirs(config.adrDirs);
@@ -103,6 +103,12 @@ export function createMcpServer(config: McpServerConfig = {}): {
             output += `#### ADR-${m.adrId}: ${m.title} (${m.status})\n`;
             output += `- **Verdict:** ${m.verdict}\n`;
             output += `- **Similarities:** Overall ${Math.round(m.overallSimilarity * 100)}%, Context ${Math.round(m.contextSimilarity * 100)}%, Decision ${Math.round(m.decisionSimilarity * 100)}%\n`;
+            if (m.sharedEntities && m.sharedEntities.length > 0) {
+              output += `- **Shared Entities:** ${m.sharedEntities.join(', ')}\n`;
+            }
+            if (m.matchedTerms && m.matchedTerms.length > 0) {
+              output += `- **Key Attributed Terms:** ${m.matchedTerms.join(', ')}\n`;
+            }
             output += `- **File:** \`${m.filePath}\`\n`;
             output += `- **Recommendation:** ${m.recommendation}\n`;
             output += `- **Excerpt:**\n> ${m.matchedExcerpt.replace(/\n/g, '\n> ')}\n\n`;
@@ -131,15 +137,16 @@ export function createMcpServer(config: McpServerConfig = {}): {
   // Tool 2: search_adrs
   server.tool(
     'search_adrs',
-    'Semantically search Architecture Decision Records using natural language queries.',
+    'Semantically search Architecture Decision Records using hybrid dense vector and BM25 sparse matching.',
     {
       query: z.string().describe('Search query or architectural question'),
       top_k: z.number().optional().describe('Maximum results to return (default 5)'),
       threshold: z.number().optional().describe('Minimum similarity threshold (default 0.35)'),
       status: z.string().optional().describe('Filter by ADR status (e.g. proposed, accepted, deprecated, superseded)'),
       section: z.enum(['all', 'summary', 'context', 'decision', 'options']).optional().describe('Target specific section to match'),
+      mode: z.enum(['hybrid', 'dense', 'sparse']).optional().describe('Search retrieval mode: hybrid (default: dense vector + BM25 keyword), dense (vector only), or sparse (BM25 keyword only)'),
     },
-    async ({ query, top_k, threshold, status, section }) => {
+    async ({ query, top_k, threshold, status, section, mode }) => {
       try {
         const sectionType = section && section !== 'all' ? (section as SectionType) : undefined;
         const results = await engine.search(query, {
@@ -147,6 +154,7 @@ export function createMcpServer(config: McpServerConfig = {}): {
           threshold: threshold ?? 0.35,
           sectionType,
           statusFilter: status ? [status] : undefined,
+          mode,
         });
 
         if (results.length === 0) {
@@ -165,6 +173,14 @@ export function createMcpServer(config: McpServerConfig = {}): {
           const r = results[i];
           output += `### ${i + 1}. ADR-${r.id}: ${r.title}\n`;
           output += `- **Score:** ${(r.score * 100).toFixed(1)}%\n`;
+          if (r.denseScore !== undefined || r.sparseScore !== undefined) {
+            const denseStr = r.denseScore !== undefined ? `${(r.denseScore * 100).toFixed(1)}%` : 'N/A';
+            const sparseStr = r.sparseScore !== undefined ? r.sparseScore.toFixed(2) : 'N/A';
+            output += `- **Attribution:** Dense: ${denseStr}, BM25: ${sparseStr}\n`;
+          }
+          if (r.matchedTerms && r.matchedTerms.length > 0) {
+            output += `- **Matched Keywords:** ${r.matchedTerms.join(', ')}\n`;
+          }
           output += `- **Status:** ${r.status}\n`;
           output += `- **File:** \`${r.filePath}\`\n`;
           output += `- **Matched Section:** ${r.matchedSection}\n`;
@@ -599,6 +615,54 @@ export function createMcpServer(config: McpServerConfig = {}): {
     }
   );
 
+  // Tool 11: list_adr_vocabulary
+  server.tool(
+    'list_adr_vocabulary',
+    'Lists technical terms and domain vocabulary harvested in-situ from repository ADRs, with document frequencies, occurrence counts, and declaring sources.',
+    {
+      min_docs: z.number().optional().describe('Minimum document frequency threshold (default 1)'),
+      limit: z.number().optional().describe('Maximum terms to return (default 50)'),
+    },
+    async ({ min_docs, limit }) => {
+      try {
+        const terms = engine.getVocabulary();
+        const minDocs = min_docs ?? 1;
+        const maxLimit = limit ?? 50;
+
+        const filtered = terms
+          .filter((t) => t.docCount >= minDocs)
+          .slice(0, maxLimit);
+
+        let output = `## In-Situ Architectural Vocabulary (${filtered.length} terms shown, ${terms.length} total)\n\n`;
+        if (filtered.length === 0) {
+          output += `No technical terms matched the threshold min_docs=${minDocs}.\n`;
+        } else {
+          for (let i = 0; i < filtered.length; i++) {
+            const t = filtered[i];
+            output += `${i + 1}. **${t.displayName}** (\`${t.term}\`)\n`;
+            output += `   - **Documents:** ${t.docCount} records (${t.docIds.slice(0, 5).join(', ')}${t.docIds.length > 5 ? '...' : ''})\n`;
+            output += `   - **Total Occurrences:** ${t.totalOccurrences}\n`;
+            output += `   - **Declared By:** ${t.sources.join(', ')}\n\n`;
+          }
+        }
+
+        return {
+          content: [{ type: 'text', text: output }],
+        };
+      } catch (error) {
+        return {
+          isError: true,
+          content: [
+            {
+              type: 'text',
+              text: `Error listing vocabulary: ${(error as Error).message}`,
+            },
+          ],
+        };
+      }
+    }
+  );
+
   // Resource 1: adr://catalog
   server.resource(
     'adr-catalog',
@@ -702,6 +766,24 @@ export function createMcpServer(config: McpServerConfig = {}): {
             uri: uri.href,
             mimeType: 'application/json',
             text: JSON.stringify(report, null, 2),
+          },
+        ],
+      };
+    }
+  );
+
+  // Resource 6: adr://vocabulary
+  server.resource(
+    'adr-vocabulary',
+    'adr://vocabulary',
+    async (uri) => {
+      const terms = engine.getVocabulary();
+      return {
+        contents: [
+          {
+            uri: uri.href,
+            mimeType: 'application/json',
+            text: JSON.stringify(terms, null, 2),
           },
         ],
       };

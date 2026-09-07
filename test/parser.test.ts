@@ -65,4 +65,22 @@ Use Web Components and Shadow DOM boundaries.
     expect(doc.sections.context).toContain('Frontend applications require sandboxed runtime execution');
     expect(doc.sections.decision).toContain('Use Web Components and Shadow DOM');
   });
+
+  it('extracts technical entities, acronyms, and citations from ADR content', () => {
+    const raw = `# ADR-0050: Distributed Tracing with OpenTelemetry on GKE
+* Status: accepted
+## Context
+We need to monitor \`gRPC\` latency and Postgres database connections according to ADR-0014 and CAF standards.
+## Decision
+Deploy OpenTelemetry collector DaemonSet to GKE and route to Google Cloud.
+`;
+    const doc = parseAdrMarkdown('/fake/path/0050-tracing.md', undefined, raw);
+    expect(doc.entities).toBeDefined();
+    expect(doc.entities).toContain('opentelemetry');
+    expect(doc.entities).toContain('gke');
+    expect(doc.entities).toContain('grpc');
+    expect(doc.entities).toContain('postgres');
+    expect(doc.entities).toContain('caf');
+    expect(doc.entities).toContain('adr-0014');
+  });
 });
