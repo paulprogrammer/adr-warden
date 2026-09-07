@@ -23,11 +23,12 @@ When autonomous agents or engineers author architectural records in isolation, t
 [Agent Receives Architecture Task]
               │
               ▼
-    1. Formulate Proposal Core
-    (title, context, decision)
+    1. Align Terminology & Formulate Core
+    (list_adr_vocabulary -> title, context, decision)
               │
               ▼
     2. Call check_adr_overlap
+    (dense semantic + entity + keyword matching)
               │
        ┌──────┴─────────────────────────────┐
        ▼                                    ▼
@@ -43,12 +44,21 @@ When autonomous agents or engineers author architectural records in isolation, t
 
 ## Step-by-Step Procedure
 
-### 1. Formulate Proposal Core
+### 1. Align Terminology and Formulate Proposal Core
 
-Deconstruct the proposed architectural direction into three clean components:
-- `title`: Concise title of the proposed architecture decision.
-- `context`: Problem statement, constraints, operational drivers, and background.
-- `decision`: Concrete technical decision, chosen technologies, and lifecycle standard.
+Before defining new architectural abstractions, ground your proposal in the repository's established technical lexicon:
+
+1. Query `list_adr_vocabulary` to inspect canonical platform terminology:
+   ```json
+   {
+     "min_docs": 2,
+     "limit": 30
+   }
+   ```
+2. Deconstruct the proposed architectural direction into three clean components, using harvested domain terms (e.g. `workload identity federation`, `service mesh`) instead of ad-hoc synonyms:
+   - `title`: Concise title of the proposed architecture decision.
+   - `context`: Problem statement, constraints, operational drivers, and background.
+   - `decision`: Concrete technical decision, chosen technologies, and lifecycle standard.
 
 ### 2. Invoke Overlap Check
 
@@ -64,21 +74,25 @@ Execute the `check_adr_overlap` tool via MCP:
 }
 ```
 
-### 3. Evaluate Diagnostic Verdict
+The tool executes multi-vector differential comparison across title, context, and decision chunks, cross-referencing extracted technical entities and BM25 term attributions.
+
+### 3. Evaluate Diagnostic Verdict and Attribution
 
 Act strictly based on the diagnostic `verdict`:
 
 - **`DUPLICATE_RISK`**:
   1. HALT net-new ADR authoring immediately. Do not create a new markdown file.
-  2. Call `get_adr` using the matched ADR ID to inspect the existing decision.
-  3. Inform the user that canonical prior art already exists.
-  4. Propose updating or enriching the existing record rather than creating a duplicate.
+  2. Inspect `Shared Entities` and `Key Attributed Terms` in the match report to understand the exact root cause of the duplicate detection.
+  3. Call `get_adr` using the matched ADR ID to inspect the existing decision.
+  4. Inform the user that canonical prior art already exists.
+  5. Propose updating or enriching the existing record rather than creating a duplicate.
 
 - **`CONFLICT_RISK`**:
   1. HALT net-new ADR authoring.
-  2. Call `get_adr` with the conflicting record ID.
-  3. Detail the exact contradiction to the user.
-  4. If the conflict is intentional, formulate a formal supersession proposal (`OBSOLETES`) or an amendment (`AMENDS`). Do not create an unharmonized conflicting record.
+  2. Review the conflicting record ID and any reported shared technology focus.
+  3. Call `get_adr` with the conflicting record ID.
+  4. Detail the exact contradiction to the user.
+  5. If the conflict is intentional, formulate a formal supersession proposal (`OBSOLETES`) or an amendment (`AMENDS`). Do not create an unharmonized conflicting record.
 
 - **`EXTENSION_CANDIDATE`**:
   1. Proceed with drafting the decision document.
@@ -88,6 +102,7 @@ Act strictly based on the diagnostic `verdict`:
 - **`NOVEL`**:
   1. Proceed with creating the net-new ADR using the standard MADR template.
   2. Run `search_adrs` with key architectural keywords to find peripheral records to link as informational citations.
+  3. Use `mode: "hybrid"` (default) for general discovery, or `mode: "sparse"` when searching for exact technology names or acronyms (e.g. `Kafka`, `Consul`, `PostgreSQL`).
 
 ---
 
@@ -95,7 +110,8 @@ Act strictly based on the diagnostic `verdict`:
 
 Tool | Purpose | Arguments
 :--- | :--- | :---
-`check_adr_overlap` | Evaluates proposed ADR components against indexed catalog | `title`, `context`, `decision`, `threshold`, `top_k`
+`check_adr_overlap` | Evaluates proposed ADR components against indexed catalog with entity and keyword attribution | `title`, `context`, `decision`, `threshold`, `top_k`
+`list_adr_vocabulary` | Lists canonical technical terms harvested in-situ from ADRs to standardize nomenclature | `min_docs`, `limit`
 `get_adr` | Retrieves full text, sections, and metadata of existing ADR | `id`
-`search_adrs` | Finds relevant architectural prior art via vector similarity | `query`, `top_k`, `threshold`, `status`
+`search_adrs` | Searches architectural prior art via hybrid (dense + BM25), dense, or sparse retrieval | `query`, `top_k`, `threshold`, `status`, `section`, `mode`
 `list_adrs` | Lists all indexed ADRs with statuses and dates | `status`

@@ -56,7 +56,7 @@ export function createMcpServer(config: McpServerConfig = {}): {
 
   const server = new McpServer({
     name: 'adr-warden',
-    version: '1.0.3',
+    version: '1.0.4',
   });
 
   const adrDirs = discoverDefaultAdrDirs(config.adrDirs);

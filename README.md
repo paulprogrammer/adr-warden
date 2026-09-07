@@ -54,8 +54,10 @@ This engine solves that failure mode at the agent authoring loop. By exposing de
 The engine runs entirely in Node.js without external API key dependencies or cloud vector database overhead:
 
 - **Local Vector Extraction**: Uses `@huggingface/transformers` executing an optimized ONNX pipeline (`Xenova/all-MiniLM-L6-v2`) generating 384-dimensional dense vectors.
+- **Hybrid Dense-Sparse Retrieval**: Merges dense vector cosine similarity with Okapi BM25 sparse scoring via Reciprocal Rank Fusion ($K=60$), ensuring exact acronyms, versions, and libraries match alongside semantic concepts.
+- **Structured In-Situ Vocabulary Harvester**: Scans repository markdown records across code spans, headers, option lists, and clause boundaries to extract domain vocabulary and bond compound terms into single high-IDF tokens.
 - **Deterministic Multi-Vector Decomposition**: ADRs are decomposed into distinct semantic chunks (document summary, problem context, decision outcome, and evaluated options) rather than monolithic document blobs.
-- **Title and Granular Similarity Scoring**: Uses exact cosine similarity across normalized Float32 vectors, cross-referencing title alignment, problem domain proximity, and decision convergence.
+- **Title and Granular Similarity Scoring**: Uses exact cosine similarity across normalized Float32 vectors, cross-referencing title alignment, problem domain proximity, decision convergence, and shared technical entities.
 - **Incremental SHA-256 Embedding Cache**: Avoids redundant inference cycles. On disk, unmodified records resolve in sub-millisecond time.
 - **MCP Server Protocol**: Implements `@modelcontextprotocol/sdk` exposing tools, resources, and prompt templates over `stdio`.
 
@@ -72,17 +74,18 @@ Evaluates a proposed ADR before authoring to detect duplicates, conflicts, or ex
   - `drivers` (string, optional): Decision drivers
   - `threshold` (number, optional): Similarity threshold (default: 0.50)
   - `top_k` (number, optional): Max matches to return (default: 5)
-- **Output**: Diagnostic verdict (`DUPLICATE_RISK`, `CONFLICT_RISK`, `EXTENSION_CANDIDATE`, `NOVEL`), confidence score, actionable guidance, and ranked candidate ADRs with individual similarity breakdowns.
+- **Output**: Diagnostic verdict (`DUPLICATE_RISK`, `CONFLICT_RISK`, `EXTENSION_CANDIDATE`, `NOVEL`), confidence score, actionable guidance, shared technical entities, attributed keywords, and ranked candidate ADRs with individual similarity breakdowns.
 
 ### 2. `search_adrs`
-Performs semantic natural language search across indexed records.
+Performs hybrid semantic and lexical keyword search across indexed records.
 
 - **Parameters**:
   - `query` (string): Natural language question or architectural topic
   - `top_k` (number, optional): Number of results (default: 5)
-  - `threshold` (number, optional): Minimum cosine similarity (default: 0.35)
+  - `threshold` (number, optional): Minimum similarity threshold (default: 0.35)
   - `status` (string, optional): Filter by status (`proposed`, `accepted`, `superseded`, etc.)
   - `section` (enum, optional): Target section (`all`, `summary`, `context`, `decision`, `options`)
+  - `mode` (enum, optional): Search mode (`hybrid` default, `dense`, `sparse`)
 
 ### 3. `get_adr`
 Retrieves full parsed structured metadata, context, decision rationale, and mermaid diagrams for a specific ADR.
@@ -97,7 +100,7 @@ Lists the complete catalog of indexed ADRs with status, dates, and lineage relat
   - `status` (string, optional): Filter by status
 
 ### 5. `index_adrs`
-Scans and synchronizes target directories with the embedding cache.
+Scans and synchronizes target directories with the embedding cache and rebuilds the in-situ vocabulary.
 
 - **Parameters**:
   - `directories` (string[], optional): Custom directories to index
@@ -130,6 +133,13 @@ Generates a clean Mermaid diagram visualizing ADR lineage, dependencies, and ext
 - **Parameters**:
   - `focus_id` (string, optional): Focus ADR identifier to render localized neighborhood
   - `radius` (number, optional): Neighborhood radius around focus ADR (default: 1)
+
+### 11. `list_adr_vocabulary`
+Lists technical terms and domain vocabulary harvested in-situ from repository ADRs, reporting document frequencies, occurrence counts, and declaring sources.
+
+- **Parameters**:
+  - `min_docs` (number, optional): Minimum document frequency threshold (default: 1)
+  - `limit` (number, optional): Maximum terms to return (default: 50)
 
 ## MCP Server Configuration
 
