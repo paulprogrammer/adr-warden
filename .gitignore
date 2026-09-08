@@ -5,3 +5,7 @@ dist/
 coverage/
 *.log
 .env
+.test-cache/
+.test-skills-install/
+.agents/
+.gemini/

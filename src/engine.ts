@@ -16,6 +16,10 @@ import type {
 import { VectorStore } from './vector-store.js';
 import { AdrKnowledgeGraph } from './graph.js';
 import { VocabularyHarvester, type VocabularyTerm } from './vocabulary.js';
+import { RemoteIndexLoader } from './remote/index-loader.js';
+import type { AdrRemoteResolver } from './remote/types.js';
+import { ChangesetParser, type ParseDiffOptions, type ParsedChangeset } from './changeset.js';
+import { ChangesetAligner, type AlignOptions, type ChangesetAlignmentReport } from './align.js';
 
 export interface AdrEngineOptions {
   cacheDir?: string;
@@ -32,6 +36,7 @@ export class AdrEngine {
 
   private knowledgeGraph: AdrKnowledgeGraph;
   private vocabularyHarvester: VocabularyHarvester;
+  private remoteResolver?: AdrRemoteResolver;
 
   constructor(options: AdrEngineOptions = {}) {
     this.cacheDir = options.cacheDir || resolve(process.cwd(), '.adr-cache');
@@ -72,6 +77,54 @@ export class AdrEngine {
 
   public getVocabulary(): VocabularyTerm[] {
     return this.vocabularyHarvester.getAllTerms();
+  }
+
+  public setRemoteResolver(resolver: AdrRemoteResolver): void {
+    this.remoteResolver = resolver;
+  }
+
+  public getRemoteResolver(): AdrRemoteResolver | undefined {
+    return this.remoteResolver;
+  }
+
+  public async loadRemoteIndex(
+    sourceUrlOrPath: string,
+    options: { force?: boolean; token?: string } = {}
+  ): Promise<{ fromCache: boolean; count: number }> {
+    const result = await RemoteIndexLoader.loadIndex(sourceUrlOrPath, {
+      cacheDir: this.cacheDir,
+      force: options.force,
+      token: options.token,
+    });
+
+    this.vectorStore.loadFromData(result.storeData);
+    this.knowledgeGraph.buildFromDocuments(this.vectorStore.getAllDocuments());
+    this.vocabularyHarvester.buildFromDocuments(this.vectorStore.getAllDocuments());
+    this.vectorStore.setVocabularyHarvester(this.vocabularyHarvester);
+
+    return {
+      fromCache: result.fromCache,
+      count: this.vectorStore.getDocumentCount(),
+    };
+  }
+
+  public async alignChangeset(
+    input: ParsedChangeset | ParseDiffOptions | string,
+    options: AlignOptions = {}
+  ): Promise<ChangesetAlignmentReport> {
+    let parsed: ParsedChangeset;
+    if (typeof input === 'string') {
+      parsed = ChangesetParser.parseDiff(input);
+    } else if ('files' in input && Array.isArray(input.files)) {
+      parsed = input as ParsedChangeset;
+    } else {
+      parsed = ChangesetParser.extractFromGit(input as ParseDiffOptions);
+    }
+
+    return ChangesetAligner.evaluate(parsed, this, {
+      resolver: options.resolver || this.remoteResolver,
+      ...options,
+    });
   }
 
   public getLineage(id: string) {

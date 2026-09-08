@@ -98,46 +98,54 @@ export class VectorStore {
     return existed;
   }
 
-  public search(queryVector: number[] = [], options: SearchOptions = {}): SearchResult[] {
+  public search(
+    queryVector: number[],
+    options: SearchOptions = {}
+  ): SearchResult[] {
+    const mode = options.mode || 'hybrid';
     const topK = options.topK ?? 5;
-    const threshold = options.threshold ?? 0.3;
-    const statusFilter = options.statusFilter?.map((s) => s.toLowerCase());
-
-    const hasVector = queryVector && queryVector.length > 0;
-    const hasText = Boolean(options.queryText && options.queryText.trim());
-
-    let mode: SearchMode = options.mode || 'dense';
-    if (!options.mode) {
-      if (hasVector && hasText) {
-        mode = 'hybrid';
-      } else if (hasText && !hasVector) {
-        mode = 'sparse';
-      } else {
-        mode = 'dense';
-      }
-    }
+    const threshold = options.threshold ?? 0.35;
 
     if (mode === 'sparse') {
       return this.searchSparse(options.queryText || '', {
         topK,
         threshold,
         sectionType: options.sectionType,
-        statusFilter,
+        statusFilter: options.statusFilter,
       });
     }
 
-    if (mode === 'hybrid' && hasText) {
-      return this.searchHybrid(queryVector, options.queryText!, {
+    if (mode === 'dense') {
+      return this.searchDense(queryVector, {
         topK,
         threshold,
         sectionType: options.sectionType,
-        statusFilter,
-        bm25Weight: options.bm25Weight,
+        statusFilter: options.statusFilter,
       });
     }
 
-    // Default: Dense Vector Search
-    const bestMatches = new Map<string, SearchResult>();
+    // Default: hybrid
+    return this.searchHybrid(queryVector, options.queryText || '', {
+      topK,
+      threshold,
+      sectionType: options.sectionType,
+      statusFilter: options.statusFilter,
+      bm25Weight: options.bm25Weight,
+    });
+  }
+
+  private searchDense(
+    queryVector: number[],
+    options: {
+      topK: number;
+      threshold: number;
+      sectionType?: SectionType;
+      statusFilter?: string[];
+    }
+  ): SearchResult[] {
+    if (queryVector.length === 0) return [];
+
+    const scoredChunks: Array<{ chunk: VectorChunk; score: number }> = [];
 
     for (const chunk of this.chunks) {
       if (!chunk.embedding) continue;
@@ -148,32 +156,40 @@ export class VectorStore {
       const doc = this.documents.get(chunk.docId);
       if (!doc) continue;
 
-      if (statusFilter && !statusFilter.includes(doc.metadata.status.toLowerCase())) {
+      if (options.statusFilter && !options.statusFilter.includes(doc.metadata.status.toLowerCase())) {
         continue;
       }
 
       const score = cosineSimilarity(queryVector, chunk.embedding);
-      if (score < threshold) continue;
+      if (score >= options.threshold) {
+        scoredChunks.push({ chunk, score });
+      }
+    }
+
+    scoredChunks.sort((a, b) => b.score - a.score);
+
+    const bestMatches = new Map<string, SearchResult>();
+    for (const item of scoredChunks) {
+      const doc = this.documents.get(item.chunk.docId);
+      if (!doc) continue;
 
       const existing = bestMatches.get(doc.id);
-      if (!existing || score > existing.score) {
+      if (!existing || item.score > existing.score) {
         bestMatches.set(doc.id, {
           id: doc.id,
           title: doc.metadata.title,
           status: doc.metadata.status,
           filePath: doc.filePath,
-          score,
-          matchedSection: chunk.sectionType,
-          excerpt: chunk.text,
+          score: Math.round(item.score * 1000) / 1000,
+          matchedSection: item.chunk.sectionType,
+          excerpt: item.chunk.text,
           metadata: doc.metadata,
-          denseScore: score,
+          denseScore: Math.round(item.score * 1000) / 1000,
         });
       }
     }
 
-    return Array.from(bestMatches.values())
-      .sort((a, b) => b.score - a.score)
-      .slice(0, topK);
+    return Array.from(bestMatches.values()).slice(0, options.topK);
   }
 
   private searchSparse(
@@ -185,7 +201,10 @@ export class VectorStore {
       statusFilter?: string[];
     }
   ): SearchResult[] {
+    if (!queryText.trim()) return [];
+
     const rawMatches = this.bm25Index.search(queryText, {
+      topK: options.topK * 3,
       sectionType: options.sectionType,
     });
 
@@ -253,30 +272,36 @@ export class VectorStore {
         continue;
       }
 
-      const sim = cosineSimilarity(queryVector, chunk.embedding);
-      denseScores.set(chunk.chunkId, sim);
+      const score = cosineSimilarity(queryVector, chunk.embedding);
+      denseScores.set(chunk.chunkId, score);
     }
 
     // 2. Calculate sparse BM25 scores
-    const bm25Results = this.bm25Index.search(queryText, {
-      sectionType: options.sectionType,
-    });
+    const sparseRaw = queryText.trim()
+      ? this.bm25Index.search(queryText, {
+          topK: this.chunks.length,
+          sectionType: options.sectionType,
+        })
+      : [];
+
     const sparseMap = new Map<string, { score: number; matchedTerms: string[] }>();
     let maxBm25 = 0;
-    for (const b of bm25Results) {
-      sparseMap.set(b.chunkId, { score: b.score, matchedTerms: b.matchedTerms });
-      if (b.score > maxBm25) maxBm25 = b.score;
+    for (const m of sparseRaw) {
+      sparseMap.set(m.chunkId, { score: m.score, matchedTerms: m.matchedTerms });
+      if (m.score > maxBm25) maxBm25 = m.score;
     }
 
-    // 3. Form rank maps for Reciprocal Rank Fusion (RRF)
+    // 3. Build dense rank map and sparse rank map
     const sortedDenseChunks = Array.from(denseScores.entries())
-      .sort((a, b) => b[1] - a[1]);
+      .sort((a, b) => b[1] - a[1])
+      .map((e) => e[0]);
+
     const denseRankMap = new Map<string, number>();
-    sortedDenseChunks.forEach(([chunkId], index) => {
+    sortedDenseChunks.forEach((chunkId, index) => {
       denseRankMap.set(chunkId, index + 1);
     });
 
-    const sortedSparseChunks = bm25Results.map((r) => r.chunkId);
+    const sortedSparseChunks = sparseRaw.map((m) => m.chunkId);
     const sparseRankMap = new Map<string, number>();
     sortedSparseChunks.forEach((chunkId, index) => {
       sparseRankMap.set(chunkId, index + 1);
@@ -407,32 +432,35 @@ export class VectorStore {
     writeFileSync(filePath, JSON.stringify(payload, null, 2), 'utf8');
   }
 
+  public loadFromData(data: SerializedVectorStore): void {
+    this.documents.clear();
+    this.chunks = [];
+    this.chunksByDocId.clear();
+
+    for (const [id, doc] of Object.entries(data.documents)) {
+      this.documents.set(id, doc);
+    }
+
+    this.bm25Index.clear();
+    this.chunks = data.chunks || [];
+    for (const chunk of this.chunks) {
+      let list = this.chunksByDocId.get(chunk.docId);
+      if (!list) {
+        list = [];
+        this.chunksByDocId.set(chunk.docId, list);
+      }
+      list.push(chunk);
+      this.bm25Index.addChunk(chunk.chunkId, chunk.docId, chunk.sectionType, chunk.text);
+    }
+  }
+
   public loadFromFile(filePath: string): boolean {
     if (!existsSync(filePath)) return false;
 
     try {
       const content = readFileSync(filePath, 'utf8');
       const data = JSON.parse(content) as SerializedVectorStore;
-
-      this.documents.clear();
-      this.chunks = [];
-      this.chunksByDocId.clear();
-
-      for (const [id, doc] of Object.entries(data.documents)) {
-        this.documents.set(id, doc);
-      }
-
-      this.bm25Index.clear();
-      this.chunks = data.chunks || [];
-      for (const chunk of this.chunks) {
-        let list = this.chunksByDocId.get(chunk.docId);
-        if (!list) {
-          list = [];
-          this.chunksByDocId.set(chunk.docId, list);
-        }
-        list.push(chunk);
-        this.bm25Index.addChunk(chunk.chunkId, chunk.docId, chunk.sectionType, chunk.text);
-      }
+      this.loadFromData(data);
       return true;
     } catch (err) {
       throw new Error(`Failed to load vector store from ${filePath}: ${(err as Error).message}`);
