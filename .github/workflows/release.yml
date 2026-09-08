@@ -32,7 +32,7 @@ concurrency:
 
 permissions:
   contents: write
-  id-token: write
+  id-token: write # Required for GitHub to mint short-lived OIDC tokens for npm Trusted Publishing
 
 jobs:
   release:
@@ -54,7 +54,6 @@ jobs:
         with:
           node-version: 22
           cache: 'pnpm'
-          registry-url: 'https://registry.npmjs.org'
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -157,18 +156,18 @@ jobs:
               --generate-notes
           fi
 
-      - name: Publish to npmjs
+      - name: Publish to npmjs (Trusted Publishing via OIDC)
         if: ${{ inputs.dry_run != true }}
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           echo "Publishing adr-warden@${{ env.VERSION }} to npm..."
+          # If an NPM_TOKEN secret exists, use it as fallback; otherwise npm uses GitHub OIDC Trusted Publishing
+          if [ -n "${{ secrets.NPM_TOKEN }}" ]; then
+            export NODE_AUTH_TOKEN="${{ secrets.NPM_TOKEN }}"
+          fi
           pnpm publish --no-git-checks --access public --provenance
 
       - name: Dry Run Publish Verification
         if: ${{ inputs.dry_run == true }}
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           echo "Dry run enabled: verifying publish without uploading to npm..."
           pnpm publish --no-git-checks --access public --dry-run
