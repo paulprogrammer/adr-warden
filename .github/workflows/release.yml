@@ -78,12 +78,12 @@ jobs:
               echo "Error: custom_version is required when bump type is 'custom'." >&2
               exit 1
             fi
-            NEW_VERSION=$(pnpm version "$CUSTOM_VER" --no-git-tag-version)
+            pnpm version "$CUSTOM_VER" --no-git-tag-version
           else
-            NEW_VERSION=$(pnpm version "$BUMP" --no-git-tag-version)
+            pnpm version "$BUMP" --no-git-tag-version
           fi
           
-          CLEAN_VERSION="${NEW_VERSION#v}"
+          CLEAN_VERSION=$(node -p "require('./package.json').version")
           TAG="v${CLEAN_VERSION}"
           
           echo "VERSION=${CLEAN_VERSION}" >> $GITHUB_ENV
