@@ -35,7 +35,7 @@ export function discoverDefaultAdrDirs(configuredDirs?: string[]): string[] {
     './docs/adr',
     './adr',
     './docs/adrs',
-    './docs/adr',
+    './doc/adr',
   ];
 
   const found: string[] = [];

@@ -11,13 +11,13 @@ describe('ADR Parser', () => {
     const doc = parseAdrMarkdown(filePath);
 
     expect(doc.id).toBe('0001');
-    expect(doc.metadata.title).toContain('Runtime Configuration Management Strategy');
-    expect(doc.metadata.status).toBe('proposed');
-    expect(doc.metadata.date).toBe('2026-09-03');
+    expect(doc.metadata.title).toContain('Static File Runtime Configuration');
+    expect(doc.metadata.status).toContain('superseded');
+    expect(doc.metadata.date).toBe('2024-01-15');
     expect(doc.metadata.deciders?.length).toBeGreaterThan(0);
-    expect(doc.sections.context).toContain('Configuration divergence and ad-hoc variable management');
-    expect(doc.sections.decisionDrivers).toContain('Deterministic Deployments');
-    expect(doc.sections.consideredOptions).toContain('Option 4: Hybrid Layered Architecture');
+    expect(doc.sections.context).toContain('Initial platform deployments relied on environment-specific JSON');
+    expect(doc.sections.decisionDrivers).toContain('Simplicity of local filesystem inspection');
+    expect(doc.sections.consideredOptions).toContain('Option 1: Bake static config files per environment into host images');
     expect(doc.contentHash).toBeDefined();
 
     const chunks = createChunks(doc);
@@ -28,11 +28,19 @@ describe('ADR Parser', () => {
   });
 
   it('parses legacy ADR format (ADR-001)', () => {
-    const filePath = resolve(
-      __dirname,
-      '../docs/adr/0001-static-file-runtime-configuration.md'
-    );
-    const doc = parseAdrMarkdown(filePath);
+    const rawLegacy = `# ADR-001: Define deployment configuration systems of record
+
+* Status: proposed
+* Date: 2026-08-27
+* Category: Foundation
+
+## Context and Problem Statement
+Deployment information currently exists across Google Cloud runtime configuration and Helm charts.
+
+## Decision Outcome
+Git-hosted configuration and Helm artifacts are authoritative.
+`;
+    const doc = parseAdrMarkdown('/fake/path/legacy/ADR-001-define-deployment-configuration.md', undefined, rawLegacy);
 
     expect(doc.id).toBe('001');
     expect(doc.metadata.title).toContain('Define deployment configuration systems of record');
@@ -40,7 +48,7 @@ describe('ADR Parser', () => {
     expect(doc.metadata.date).toBe('2026-08-27');
     expect(doc.metadata.category).toBe('Foundation');
     expect(doc.sections.context).toContain('Deployment information currently exists across Google Cloud runtime configuration');
-    expect(doc.sections.decision).toContain('Git-hosted `.google` configuration and Helm artifacts are authoritative');
+    expect(doc.sections.decision).toContain('Git-hosted configuration and Helm artifacts are authoritative');
   });
 
   it('parses mock raw markdown with overrides', () => {

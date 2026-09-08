@@ -72,7 +72,7 @@ describe('MCP Server Integration via InMemoryTransport', () => {
 
     expect(result.content).toBeDefined();
     const text = (result.content as Array<{ type: string; text: string }>)[0].text;
-    expect(text).toContain('ADR-0002');
+    expect(text).toContain('ADR-0004');
     expect(text).toContain('Immutable');
   });
 
@@ -80,15 +80,15 @@ describe('MCP Server Integration via InMemoryTransport', () => {
     const result = await client.callTool({
       name: 'check_adr_overlap',
       arguments: {
-        title: 'Immutable Digest Promotion Lifecycle',
-        context: 'Using mutable container tags leads to non-deterministic deployments. We need an immutable promotion standard.',
-        decision: 'Build images once, tag by sha256 immutable digest, and promote across environments without rebuilding.',
+        title: 'Static File Runtime Configuration Strategy',
+        context: 'Initial platform deployments relied on environment-specific JSON and YAML configuration files baked directly into machine images, causing operational friction and configuration drift.',
+        decision: 'Bake static config files per environment into host machine images to achieve rapid initial bootstrap reliability.',
       },
     });
 
     const text = (result.content as Array<{ type: string; text: string }>)[0].text;
     expect(text).toContain('DUPLICATE_RISK');
-    expect(text).toContain('ADR-0002');
+    expect(text).toContain('ADR-0001');
     expect(text).toContain('HALT net-new ADR creation');
   });
 
@@ -101,7 +101,7 @@ describe('MCP Server Integration via InMemoryTransport', () => {
     });
 
     const text = (result.content as Array<{ type: string; text: string }>)[0].text;
-    expect(text).toContain('ADR-0001: Runtime Configuration Management Strategy');
+    expect(text).toContain('ADR-0001: Static File Runtime Configuration');
     expect(text).toContain('Context and Problem Statement');
   });
 
