@@ -1,0 +1,176 @@
+name: Release & Publish
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Version bump type'
+        required: true
+        type: choice
+        default: 'patch'
+        options:
+          - patch
+          - minor
+          - major
+          - custom
+      custom_version:
+        description: 'Explicit version (only required if bump is "custom", e.g. 1.1.0 or 1.1.0-beta.1)'
+        required: false
+        type: string
+      dry_run:
+        description: 'Dry run (build, test, pack, and upload artifacts without committing tag or publishing to npm)'
+        required: false
+        type: boolean
+        default: false
+  push:
+    tags:
+      - 'v*'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  release:
+    name: Build, Release & Publish
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'pnpm'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run test suite
+        run: pnpm test
+
+      - name: Configure Git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Manage Version & Tag (Workflow Dispatch)
+        if: github.event_name == 'workflow_dispatch'
+        id: version_dispatch
+        run: |
+          BUMP="${{ inputs.bump }}"
+          CUSTOM_VER="${{ inputs.custom_version }}"
+          
+          if [ "$BUMP" = "custom" ]; then
+            if [ -z "$CUSTOM_VER" ]; then
+              echo "Error: custom_version is required when bump type is 'custom'." >&2
+              exit 1
+            fi
+            NEW_VERSION=$(pnpm version "$CUSTOM_VER" --no-git-tag-version)
+          else
+            NEW_VERSION=$(pnpm version "$BUMP" --no-git-tag-version)
+          fi
+          
+          CLEAN_VERSION="${NEW_VERSION#v}"
+          TAG="v${CLEAN_VERSION}"
+          
+          echo "VERSION=${CLEAN_VERSION}" >> $GITHUB_ENV
+          echo "TAG=${TAG}" >> $GITHUB_ENV
+          echo "version=${CLEAN_VERSION}" >> $GITHUB_OUTPUT
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+
+          echo "Target Release Version: ${CLEAN_VERSION} (${TAG})"
+
+          if [ "${{ inputs.dry_run }}" != "true" ]; then
+            git add package.json
+            git commit -m "chore(release): ${TAG} [skip ci]"
+            git tag -a "${TAG}" -m "Release ${TAG}"
+            git push origin HEAD:${{ github.ref_name }}
+            git push origin "${TAG}"
+          else
+            echo "Dry run enabled: skipping git commit and tag push."
+          fi
+
+      - name: Manage Version & Tag (Tag Push)
+        if: github.event_name == 'push'
+        id: version_push
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          CLEAN_VERSION="${TAG#v}"
+          echo "VERSION=${CLEAN_VERSION}" >> $GITHUB_ENV
+          echo "TAG=${TAG}" >> $GITHUB_ENV
+          echo "version=${CLEAN_VERSION}" >> $GITHUB_OUTPUT
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          
+          echo "Triggered by tag push: ${TAG} (Version: ${CLEAN_VERSION})"
+          pnpm version "${CLEAN_VERSION}" --no-git-tag-version --allow-same-version
+
+      - name: Build distribution
+        run: pnpm build
+
+      - name: Pack distribution tarball
+        run: |
+          mkdir -p dist-package
+          pnpm pack --pack-destination dist-package/
+          TARBALL=$(ls dist-package/*.tgz | head -n 1)
+          echo "TARBALL_PATH=${TARBALL}" >> $GITHUB_ENV
+          echo "Packed archive: ${TARBALL}"
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: adr-warden-${{ env.VERSION }}
+          path: |
+            dist/**
+            skills/**
+            dist-package/*.tgz
+            README.md
+            LICENSE
+            package.json
+          retention-days: 90
+
+      - name: Create GitHub Release
+        if: ${{ inputs.dry_run != true }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "${{ env.TAG }}" >/dev/null 2>&1; then
+            echo "Release ${{ env.TAG }} already exists. Uploading tarball asset..."
+            gh release upload "${{ env.TAG }}" "${{ env.TARBALL_PATH }}" --clobber
+          else
+            echo "Creating GitHub release ${{ env.TAG }}..."
+            gh release create "${{ env.TAG }}" "${{ env.TARBALL_PATH }}" \
+              --title "ADR Warden ${{ env.TAG }}" \
+              --generate-notes
+          fi
+
+      - name: Publish to npmjs
+        if: ${{ inputs.dry_run != true }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          echo "Publishing adr-warden@${{ env.VERSION }} to npm..."
+          pnpm publish --no-git-checks --access public --provenance
+
+      - name: Dry Run Publish Verification
+        if: ${{ inputs.dry_run == true }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          echo "Dry run enabled: verifying publish without uploading to npm..."
+          pnpm publish --no-git-checks --access public --dry-run
